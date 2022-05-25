@@ -169,6 +169,20 @@ static int ithc_input_init(struct ithc *ithc) {
 
 // Interrupts/polling
 
+static void ithc_activity_timer_callback(struct timer_list *t) {
+	struct ithc *ithc = container_of(t, struct ithc, activity_timer);
+	cpu_latency_qos_update_request(&ithc->activity_qos, PM_QOS_DEFAULT_VALUE);
+}
+
+void ithc_set_active(struct ithc *ithc) {
+	// When CPU usage is very low, the CPU can enter various low power states (C2-C10).
+	// This disrupts DMA, causing truncated DMA messages. ERROR_FLAG_DMA_UNKNOWN_12 will be set when this happens.
+	// The amount of truncated messages can become very high, resulting in user-visible effects (laggy/stuttering cursor).
+	// To avoid this, we use a CPU latency QoS request to prevent the CPU from entering low power states during touch interactions.
+	cpu_latency_qos_update_request(&ithc->activity_qos, 0);
+	mod_timer(&ithc->activity_timer, jiffies + msecs_to_jiffies(1000));
+}
+
 static int ithc_set_device_enabled(struct ithc *ithc, bool enable) {
 	u32 x = ithc->config.touch_cfg = (ithc->config.touch_cfg & ~(u32)DEVCFG_TOUCH_MASK) | DEVCFG_TOUCH_UNKNOWN_2
 		| (enable ? DEVCFG_TOUCH_ENABLE | DEVCFG_TOUCH_UNKNOWN_3 | DEVCFG_TOUCH_UNKNOWN_4 : 0);
@@ -329,6 +343,8 @@ static void ithc_stop(void *res) {
 	struct ithc *ithc = res;
 	pci_dbg(ithc->pci, "stopping\n");
 	ithc_log_regs(ithc);
+	del_timer_sync(&ithc->activity_timer);
+	cpu_latency_qos_remove_request(&ithc->activity_qos);
 	if (ithc->poll_thread) CHECK(kthread_stop, ithc->poll_thread);
 	if (ithc->irq >= 0) disable_irq(ithc->irq);
 	CHECK(ithc_set_device_enabled, ithc, false);
@@ -379,6 +395,9 @@ static int ithc_probe(struct pci_dev *pci, const struct pci_device_id *id) {
 
 	if (ithc_use_hid) CHECK_RET(ithc_hid_init, ithc);
 	else CHECK_RET(ithc_input_init, ithc);
+
+	cpu_latency_qos_add_request(&ithc->activity_qos, PM_QOS_DEFAULT_VALUE);
+	timer_setup(&ithc->activity_timer, ithc_activity_timer_callback, 0);
 
 	// add ithc_stop callback AFTER setting up DMA buffers, so that polling/irqs/DMA are disabled BEFORE the buffers are freed
 	CHECK_RET(devm_add_action_or_reset, &pci->dev, ithc_stop, ithc);

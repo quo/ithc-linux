@@ -24,7 +24,7 @@
 
 #define ERROR_FLAG_DMA_UNKNOWN_9            BIT(9)
 #define ERROR_FLAG_DMA_UNKNOWN_10           BIT(10)
-#define ERROR_FLAG_DMA_UNKNOWN_12           BIT(12) // set when we receive an invalid HID report in rx1
+#define ERROR_FLAG_DMA_UNKNOWN_12           BIT(12) // set when we receive a truncated DMA message
 #define ERROR_FLAG_DMA_UNKNOWN_13           BIT(13)
 #define ERROR_FLAG_SPI_BUS_TURNAROUND       BIT(16)
 #define ERROR_FLAG_SPI_RESPONSE_TIMEOUT     BIT(17)

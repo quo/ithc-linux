@@ -11,6 +11,8 @@
 #include <linux/miscdevice.h>
 #include <linux/debugfs.h>
 #include <linux/poll.h>
+#include <linux/timer.h>
+#include <linux/pm_qos.h>
 
 #define DEVNAME "ithc"
 #define DEVFULLNAME "Intel Touch Host Controller"
@@ -39,6 +41,8 @@ struct ithc {
 	struct pci_dev *pci;
 	int irq;
 	struct task_struct *poll_thread;
+	struct pm_qos_request activity_qos;
+	struct timer_list activity_timer;
 
 	struct input_dev *input;
 
@@ -54,6 +58,7 @@ struct ithc {
 };
 
 int ithc_reset(struct ithc *ithc);
+void ithc_set_active(struct ithc *ithc);
 int ithc_debug_init(struct ithc *ithc);
 void ithc_log_regs(struct ithc *ithc);
 
