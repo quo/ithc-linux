@@ -102,10 +102,7 @@ static void ithc_api_devres_release(struct device *dev, void *res) {
 
 int ithc_api_init(struct ithc *ithc, struct ithc_dma_rx *rx, const char *name) {
 	struct ithc_api *a = devres_alloc(ithc_api_devres_release, sizeof *a, GFP_KERNEL);
-	if (!a) {
-		pci_err(ithc->pci, "failed to allocate dma rx device\n");
-		return -ENOMEM;
-	}
+	if (!a) return -ENOMEM;
 	a->ithc = ithc;
 	a->rx = rx;
 	a->m.minor = MISC_DYNAMIC_MINOR;

@@ -96,6 +96,7 @@ static int ithc_hid_parse(struct hid_device *hdev) {
 
 static int ithc_hid_raw_request(struct hid_device *hdev, unsigned char reportnum, __u8 *buf, size_t len, unsigned char rtype, int reqtype) {
 	struct ithc *ithc = hdev->driver_data;
+	if (!len) return -EINVAL;
 	u32 code;
 	if (rtype == HID_OUTPUT_REPORT && reqtype == HID_REQ_SET_REPORT) code = DMA_TX_CODE_OUTPUT_REPORT;
 	else if (rtype == HID_FEATURE_REPORT && reqtype == HID_REQ_SET_REPORT) code = DMA_TX_CODE_SET_FEATURE;
@@ -104,7 +105,9 @@ static int ithc_hid_raw_request(struct hid_device *hdev, unsigned char reportnum
 		pci_err(ithc->pci, "unhandled hid request %i %i for report id %i\n", rtype, reqtype, reportnum);
 		return -EINVAL;
 	}
-	CHECK_RET(ithc_dma_tx, ithc, code, len, buf);
+	buf[0] = reportnum;
+	CHECK_RET(ithc_dma_tx, ithc, code, reqtype == HID_REQ_GET_REPORT ? 1 : len, buf);
+	// FIXME should synchronously return response for HID_REQ_GET_REPORT
 	return 0;
 }
 
@@ -252,7 +255,7 @@ static int ithc_poll_thread(void *arg) {
 		u32 n = ithc->dma_rx[1].num_received;
 		ithc_process(ithc);
 		if (n != ithc->dma_rx[1].num_received) sleep = 20;
-		else sleep = min(200u, sleep + (sleep >> 4));
+		else sleep = min(200u, sleep + (sleep >> 4) + 1);
 		msleep_interruptible(sleep);
 	}
 	return 0;
@@ -282,7 +285,7 @@ static int ithc_init_device(struct ithc *ithc) {
 
 	if (was_enabled) if (msleep_interruptible(100)) return -EINTR;
 	bitsl(&ithc->regs->control_bits, CONTROL_QUIESCE, 0);
-	waitl(ithc, &ithc->regs->control_bits, CONTROL_IS_QUIESCED, 0);
+	CHECK_RET(waitl, ithc, &ithc->regs->control_bits, CONTROL_IS_QUIESCED, 0);
 	for (int retries = 0; ; retries++) {
 		ithc_log_regs(ithc);
 		bitsl_set(&ithc->regs->control_bits, CONTROL_NRESET);
@@ -343,12 +346,12 @@ static void ithc_stop(void *res) {
 	struct ithc *ithc = res;
 	pci_dbg(ithc->pci, "stopping\n");
 	ithc_log_regs(ithc);
-	del_timer_sync(&ithc->activity_timer);
-	cpu_latency_qos_remove_request(&ithc->activity_qos);
 	if (ithc->poll_thread) CHECK(kthread_stop, ithc->poll_thread);
 	if (ithc->irq >= 0) disable_irq(ithc->irq);
 	CHECK(ithc_set_device_enabled, ithc, false);
 	ithc_disable(ithc);
+	del_timer_sync(&ithc->activity_timer);
+	cpu_latency_qos_remove_request(&ithc->activity_qos);
 	// clear dma config
 	for(unsigned i = 0; i < 2; i++) {
 		CHECK(waitl, ithc, &ithc->regs->dma_rx[i].status, DMA_RX_STATUS_ENABLED, 0);
@@ -369,14 +372,14 @@ static int ithc_probe(struct pci_dev *pci, const struct pci_device_id *id) {
 	if (!ithc) return -ENOMEM;
 	ithc->irq = -1;
 	ithc->pci = pci;
-	snprintf(ithc->phys, sizeof ithc->phys, "pci-%s/"DEVNAME, pci_name(pci));
+	snprintf(ithc->phys, sizeof ithc->phys, "pci-%s/" DEVNAME, pci_name(pci));
 	init_waitqueue_head(&ithc->wait_hid_parse);
 	pci_set_drvdata(pci, ithc);
 	if (ithc_log_regs_enabled) ithc->prev_regs = devm_kzalloc(&pci->dev, sizeof *ithc->prev_regs, GFP_KERNEL);
 
 	CHECK_RET(pcim_enable_device, pci);
 	pci_set_master(pci);
-	CHECK_RET(pcim_iomap_regions, pci, BIT(0), "ithc regs");
+	CHECK_RET(pcim_iomap_regions, pci, BIT(0), DEVNAME " regs");
 	CHECK_RET(dma_set_mask_and_coherent, &pci->dev, DMA_BIT_MASK(64));
 	CHECK_RET(pci_set_power_state, pci, PCI_D0);
 	ithc->regs = pcim_iomap_table(pci)[0];
@@ -389,8 +392,8 @@ static int ithc_probe(struct pci_dev *pci, const struct pci_device_id *id) {
 
 	CHECK_RET(ithc_init_device, ithc);
 	CHECK(devm_device_add_groups, &pci->dev, ithc_attribute_groups);
-	if (ithc_use_rx0) CHECK_RET(ithc_dma_rx_init, ithc, 0, ithc_use_rx1 ? "ithc0" : "ithc");
-	if (ithc_use_rx1) CHECK_RET(ithc_dma_rx_init, ithc, 1, ithc_use_rx0 ? "ithc1" : "ithc");
+	if (ithc_use_rx0) CHECK_RET(ithc_dma_rx_init, ithc, 0, ithc_use_rx1 ? DEVNAME "0" : DEVNAME);
+	if (ithc_use_rx1) CHECK_RET(ithc_dma_rx_init, ithc, 1, ithc_use_rx0 ? DEVNAME "1" : DEVNAME);
 	CHECK_RET(ithc_dma_tx_init, ithc);
 
 	if (ithc_use_hid) CHECK_RET(ithc_hid_init, ithc);

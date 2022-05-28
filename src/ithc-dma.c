@@ -169,7 +169,7 @@ static int ithc_dma_rx_process_buf(struct ithc *ithc, struct ithc_dma_data_buffe
 			// See also ithc_set_active().
 		} else {
 			pci_err(ithc->pci, "invalid dma rx data! channel %u, buffer %u, size %u, code %u, data size %u\n", channel, buf, len, hdr->code, hdr->data_size);
-			print_hex_dump_debug("ithc data: ", DUMP_PREFIX_OFFSET, 32, 1, hdr, min(len, 0x400u), 0);
+			print_hex_dump_debug(DEVNAME " data: ", DUMP_PREFIX_OFFSET, 32, 1, hdr, min(len, 0x400u), 0);
 		}
 	} else if (ithc->input && hdr->code == DMA_RX_CODE_INPUT_REPORT && hdr->data_size == sizeof *st && st->report_id == HID_REPORT_ID_SINGLETOUCH) {
 		input_report_key(ithc->input, BTN_TOUCH, st->button);
@@ -186,7 +186,7 @@ static int ithc_dma_rx_process_buf(struct ithc *ithc, struct ithc_dma_data_buffe
 		CHECK(hid_input_report, ithc->hid, HID_FEATURE_REPORT, hiddata, hdr->data_size, 1);
 	} else {
 		pci_dbg(ithc->pci, "unhandled dma rx data! channel %u, buffer %u, size %u, code %u\n", channel, buf, len, hdr->code);
-		print_hex_dump_debug("ithc data: ", DUMP_PREFIX_OFFSET, 32, 1, hdr, min(len, 0x400u), 0);
+		print_hex_dump_debug(DEVNAME " data: ", DUMP_PREFIX_OFFSET, 32, 1, hdr, min(len, 0x400u), 0);
 	}
 	return 0;
 }

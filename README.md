@@ -30,7 +30,8 @@ and reloading the module or rebooting).
 
 The driver works in single-touch mode by default. Multitouch and pen data
 is made available to userspace through /dev/ithc. To enable multitouch
-functionality, you will need to install a version of iptsd with ithc support.
+functionality, you will need to install a version of iptsd with ithc support
+(eg. https://github.com/quo/iptsd).
 
 The driver can be made to function as a HID transport driver by setting
 the `hid` module parameter. This mode is currently not recommended.

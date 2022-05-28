@@ -43,7 +43,7 @@ int ithc_set_spi_config(struct ithc *ithc, u8 speed, u8 mode) {
 }
 
 int ithc_spi_command(struct ithc *ithc, u8 command, u32 offset, u32 size, void *data) {
-	pci_dbg(ithc->pci, "reg command %u, size %u, offset %u\n", command, size, offset);
+	pci_dbg(ithc->pci, "SPI command %u, size %u, offset %u\n", command, size, offset);
 	if (size > sizeof ithc->regs->spi_cmd.data) return -EINVAL;
 	CHECK_RET(waitl, ithc, &ithc->regs->spi_cmd.status, SPI_CMD_STATUS_BUSY, 0);
 	writel(SPI_CMD_STATUS_DONE | SPI_CMD_STATUS_ERROR, &ithc->regs->spi_cmd.status);
