@@ -36,6 +36,7 @@ int waitb(struct ithc *ithc, u8 *reg, u8 mask, u8 val) {
 
 int ithc_set_spi_config(struct ithc *ithc, u8 speed, u8 mode) {
 	pci_dbg(ithc->pci, "setting SPI speed to %i, mode %i\n", speed, mode);
+	if (mode == 3) mode = 2;
 	bitsl(&ithc->regs->spi_config,
 		SPI_CONFIG_MODE(0xff) | SPI_CONFIG_SPEED(0xff) | SPI_CONFIG_UNKNOWN_18(0xff) | SPI_CONFIG_SPEED2(0xff),
 		SPI_CONFIG_MODE(mode) | SPI_CONFIG_SPEED(speed) | SPI_CONFIG_UNKNOWN_18(0) | SPI_CONFIG_SPEED2(speed));
