@@ -107,7 +107,7 @@ static int ithc_hid_parse(struct hid_device *hdev) {
 
 static int ithc_hid_raw_request(struct hid_device *hdev, unsigned char reportnum, __u8 *buf, size_t len, unsigned char rtype, int reqtype) {
 	struct ithc *ithc = hdev->driver_data;
-	if (!len) return -EINVAL;
+	if (!buf || !len) return -EINVAL;
 	u32 code;
 	if (rtype == HID_OUTPUT_REPORT && reqtype == HID_REQ_SET_REPORT) code = DMA_TX_CODE_OUTPUT_REPORT;
 	else if (rtype == HID_FEATURE_REPORT && reqtype == HID_REQ_SET_REPORT) code = DMA_TX_CODE_SET_FEATURE;
@@ -117,8 +117,25 @@ static int ithc_hid_raw_request(struct hid_device *hdev, unsigned char reportnum
 		return -EINVAL;
 	}
 	buf[0] = reportnum;
-	CHECK_RET(ithc_dma_tx, ithc, code, reqtype == HID_REQ_GET_REPORT ? 1 : len, buf);
-	// FIXME should synchronously return response for HID_REQ_GET_REPORT
+	if (reqtype == HID_REQ_GET_REPORT) {
+		mutex_lock(&ithc->hid_get_feature_mutex);
+		ithc->hid_get_feature_buf = buf;
+		ithc->hid_get_feature_size = len;
+		mutex_unlock(&ithc->hid_get_feature_mutex);
+		int r = CHECK(ithc_dma_tx, ithc, code, 1, buf);
+		if (!r) {
+			r = wait_event_interruptible_timeout(ithc->wait_hid_get_feature, !ithc->hid_get_feature_buf, msecs_to_jiffies(1000));
+			if (!r) r = -ETIMEDOUT;
+			else if (r < 0) r = -EINTR;
+			else r = 0;
+		}
+		mutex_lock(&ithc->hid_get_feature_mutex);
+		ithc->hid_get_feature_buf = NULL;
+		if (!r) r = ithc->hid_get_feature_size;
+		mutex_unlock(&ithc->hid_get_feature_mutex);
+		return r;
+	}
+	CHECK_RET(ithc_dma_tx, ithc, code, len, buf);
 	return 0;
 }
 
@@ -385,6 +402,8 @@ static int ithc_probe(struct pci_dev *pci, const struct pci_device_id *id) {
 	ithc->pci = pci;
 	snprintf(ithc->phys, sizeof ithc->phys, "pci-%s/" DEVNAME, pci_name(pci));
 	init_waitqueue_head(&ithc->wait_hid_parse);
+	init_waitqueue_head(&ithc->wait_hid_get_feature);
+	mutex_init(&ithc->hid_get_feature_mutex);
 	pci_set_drvdata(pci, ithc);
 	if (ithc_log_regs_enabled) ithc->prev_regs = devm_kzalloc(&pci->dev, sizeof *ithc->prev_regs, GFP_KERNEL);
 

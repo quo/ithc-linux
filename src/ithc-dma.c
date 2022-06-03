@@ -183,7 +183,17 @@ static int ithc_dma_rx_process_buf(struct ithc *ithc, struct ithc_dma_data_buffe
 	} else if (ithc->hid && hdr->code == DMA_RX_CODE_INPUT_REPORT) {
 		CHECK(hid_input_report, ithc->hid, HID_INPUT_REPORT, hiddata, hdr->data_size, 1);
 	} else if (ithc->hid && hdr->code == DMA_RX_CODE_FEATURE_REPORT) {
-		CHECK(hid_input_report, ithc->hid, HID_FEATURE_REPORT, hiddata, hdr->data_size, 1);
+		bool done = false;
+		mutex_lock(&ithc->hid_get_feature_mutex);
+		if (ithc->hid_get_feature_buf) {
+			if (hdr->data_size < ithc->hid_get_feature_size) ithc->hid_get_feature_size = hdr->data_size;
+			memcpy(ithc->hid_get_feature_buf, hiddata, ithc->hid_get_feature_size);
+			ithc->hid_get_feature_buf = NULL;
+			done = true;
+		}
+		mutex_unlock(&ithc->hid_get_feature_mutex);
+		if (done) wake_up(&ithc->wait_hid_get_feature);
+		else CHECK(hid_input_report, ithc->hid, HID_FEATURE_REPORT, hiddata, hdr->data_size, 1);
 	} else {
 		pci_dbg(ithc->pci, "unhandled dma rx data! channel %u, buffer %u, size %u, code %u\n", channel, buf, len, hdr->code);
 		print_hex_dump_debug(DEVNAME " data: ", DUMP_PREFIX_OFFSET, 32, 1, hdr, min(len, 0x400u), 0);

@@ -49,6 +49,10 @@ struct ithc {
 	struct hid_device *hid;
 	bool hid_parse_done;
 	wait_queue_head_t wait_hid_parse;
+	wait_queue_head_t wait_hid_get_feature;
+	struct mutex hid_get_feature_mutex;
+	void *hid_get_feature_buf;
+	size_t hid_get_feature_size;
 
 	struct ithc_registers *regs;
 	struct ithc_registers *prev_regs; // for debugging
