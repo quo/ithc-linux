@@ -101,7 +101,7 @@ static int ithc_dma_data_buffer_get(struct ithc *ithc, struct ithc_dma_prd_buffe
 			unsigned size = prd->size;
 			b->data_size += size & PRD_SIZE_MASK;
 			if (size & PRD_END_FLAG) break;
-			if (size != sg_dma_len(sg)) { pci_err(ithc->pci, "truncated prd\n"); break; }
+			if ((size & PRD_SIZE_MASK) != sg_dma_len(sg)) { pci_err(ithc->pci, "truncated prd\n"); break; }
 			prd++;
 		}
 		invalidate_kernel_vmap_range(b->addr, b->data_size);
