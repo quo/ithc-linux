@@ -27,8 +27,8 @@ static bool ithc_use_polling = false;
 module_param_named(poll, ithc_use_polling, bool, 0);
 MODULE_PARM_DESC(poll, "Use polling instead of interrupts");
 
-static int ithc_use_hid = -1;
-module_param_named(hid, ithc_use_hid, bint, 0);
+static bool ithc_use_hid = true;
+module_param_named(hid, ithc_use_hid, bool, 0);
 MODULE_PARM_DESC(hid, "Operate as an HID transport driver instead of an input driver");
 
 static bool ithc_use_rx0 = false;
@@ -425,9 +425,6 @@ static int ithc_probe(struct pci_dev *pci, const struct pci_device_id *id) {
 	if (ithc_use_rx0) CHECK_RET(ithc_dma_rx_init, ithc, 0, ithc_use_rx1 ? DEVNAME "0" : DEVNAME);
 	if (ithc_use_rx1) CHECK_RET(ithc_dma_rx_init, ithc, 1, ithc_use_rx0 ? DEVNAME "1" : DEVNAME);
 	CHECK_RET(ithc_dma_tx_init, ithc);
-
-	// enable HID mode by default for non-Microsoft hardware
-	if (ithc_use_hid < 0) ithc_use_hid = ithc->config.vendor_id != 0x045e;
 
 	if (ithc_use_hid) CHECK_RET(ithc_hid_init, ithc);
 	else CHECK_RET(ithc_input_init, ithc);
