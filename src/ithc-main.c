@@ -418,8 +418,18 @@ static void ithc_stop(void *res) {
 	pci_dbg(ithc->pci, "stopped\n");
 }
 
-static int ithc_probe(struct pci_dev *pci, const struct pci_device_id *id) {
+static void ithc_clear_drvdata(void *res) {
+	struct pci_dev *pci = res;
+	pci_set_drvdata(pci, NULL);
+}
+
+static int ithc_start(struct pci_dev *pci) {
 	pci_dbg(pci, "starting\n");
+	if (pci_get_drvdata(pci)) {
+		pci_err(pci, "device already initialized\n");
+		return -EINVAL;
+	}
+	if (!devres_open_group(&pci->dev, ithc_start, GFP_KERNEL)) return -ENOMEM;
 
 	struct ithc *ithc = devm_kzalloc(&pci->dev, sizeof *ithc, GFP_KERNEL);
 	if (!ithc) return -ENOMEM;
@@ -430,6 +440,7 @@ static int ithc_probe(struct pci_dev *pci, const struct pci_device_id *id) {
 	init_waitqueue_head(&ithc->wait_hid_get_feature);
 	mutex_init(&ithc->hid_get_feature_mutex);
 	pci_set_drvdata(pci, ithc);
+	CHECK_RET(devm_add_action_or_reset, &pci->dev, ithc_clear_drvdata, pci);
 	if (ithc_log_regs_enabled) ithc->prev_regs = devm_kzalloc(&pci->dev, sizeof *ithc->prev_regs, GFP_KERNEL);
 
 	CHECK_RET(pcim_enable_device, pci);
@@ -485,8 +496,33 @@ static int ithc_probe(struct pci_dev *pci, const struct pci_device_id *id) {
 	return 0;
 }
 
-void ithc_remove(struct pci_dev *dev) {
+static int ithc_probe(struct pci_dev *pci, const struct pci_device_id *id) {
+	pci_dbg(pci, "device probe\n");
+	return ithc_start(pci);
+}
+
+static void ithc_remove(struct pci_dev *pci) {
+	pci_dbg(pci, "device remove\n");
 	// all cleanup is handled by devres
+}
+
+static int ithc_freeze(struct device *dev) {
+	struct pci_dev *pci = to_pci_dev(dev);
+	pci_dbg(pci, "pm freeze\n");
+	devres_release_group(dev, ithc_start);
+	return 0;
+}
+
+static int ithc_thaw(struct device *dev) {
+	struct pci_dev *pci = to_pci_dev(dev);
+	pci_dbg(pci, "pm thaw\n");
+	return ithc_start(pci);
+}
+
+static int ithc_restore(struct device *dev) {
+	struct pci_dev *pci = to_pci_dev(dev);
+	pci_dbg(pci, "pm restore\n");
+	return ithc_start(pci);
 }
 
 static struct pci_driver ithc_driver = {
@@ -494,6 +530,11 @@ static struct pci_driver ithc_driver = {
 	.id_table = ithc_pci_tbl,
 	.probe = ithc_probe,
 	.remove = ithc_remove,
+	.driver.pm = &(const struct dev_pm_ops) {
+		.freeze = ithc_freeze,
+		.thaw = ithc_thaw,
+		.restore = ithc_restore,
+	},
 	//.dev_groups = ithc_attribute_groups, // could use this (since 5.14), however the attributes won't have valid values until config has been read anyway
 };
 
