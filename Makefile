@@ -18,6 +18,7 @@ DKMS_DIR = /usr/src/$(PKG_NAME)-$(PKG_VER)
 DKMS_PKG = $(PKG_NAME)/$(PKG_VER)
 
 dkms-install:
+	-test -e $(DKMS_DIR) && $(MAKE) dkms-uninstall
 	mkdir -p $(DKMS_DIR)
 	cp -r dkms.conf Makefile src $(DKMS_DIR)
 	dkms add $(DKMS_PKG)
