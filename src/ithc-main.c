@@ -506,6 +506,22 @@ static void ithc_remove(struct pci_dev *pci) {
 	// all cleanup is handled by devres
 }
 
+static int ithc_suspend(struct device *dev) {
+	struct pci_dev *pci = to_pci_dev(dev);
+	pci_dbg(pci, "pm suspend\n");
+	pci_disable_device(pci);
+	return 0;
+}
+
+static int ithc_resume(struct device *dev) {
+	struct pci_dev *pci = to_pci_dev(dev);
+	struct ithc *ithc = dev_get_drvdata(dev);
+	pci_dbg(pci, "pm resume\n");
+	CHECK_RET(pcim_enable_device, pci);
+	pci_set_master(pci);
+	return 0;
+}
+
 static int ithc_freeze(struct device *dev) {
 	struct pci_dev *pci = to_pci_dev(dev);
 	pci_dbg(pci, "pm freeze\n");
@@ -531,6 +547,8 @@ static struct pci_driver ithc_driver = {
 	.probe = ithc_probe,
 	.remove = ithc_remove,
 	.driver.pm = &(const struct dev_pm_ops) {
+		.suspend = ithc_suspend,
+		.resume = ithc_resume,
 		.freeze = ithc_freeze,
 		.thaw = ithc_thaw,
 		.restore = ithc_restore,
