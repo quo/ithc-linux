@@ -52,6 +52,10 @@ static bool ithc_use_polling = false;
 module_param_named(poll, ithc_use_polling, bool, 0);
 MODULE_PARM_DESC(poll, "Use polling instead of interrupts");
 
+static int ithc_no_suspend = 0;
+module_param_named(nosuspend, ithc_no_suspend, int, 0);
+MODULE_PARM_DESC(nosuspend, "Disable suspend");
+
 static bool ithc_use_hid = true;
 module_param_named(hid, ithc_use_hid, bool, 0);
 MODULE_PARM_DESC(hid, "Operate as an HID transport driver instead of an input driver");
@@ -448,6 +452,7 @@ static int ithc_start(struct pci_dev *pci) {
 	CHECK_RET(pcim_iomap_regions, pci, BIT(0), DEVNAME " regs");
 	CHECK_RET(dma_set_mask_and_coherent, &pci->dev, DMA_BIT_MASK(64));
 	CHECK_RET(pci_set_power_state, pci, PCI_D0);
+
 	ithc->regs = pcim_iomap_table(pci)[0];
 
 	if (!ithc_use_polling) {
@@ -498,6 +503,12 @@ static int ithc_start(struct pci_dev *pci) {
 
 static int ithc_probe(struct pci_dev *pci, const struct pci_device_id *id) {
 	pci_dbg(pci, "device probe\n");
+
+	if (ithc_no_suspend & 1) pci_d3cold_disable(pci);
+	else pci_d3cold_enable(pci);
+	if (ithc_no_suspend & 2) pci->dev_flags |= PCI_DEV_FLAGS_NO_D3;
+	else pci->dev_flags &= ~PCI_DEV_FLAGS_NO_D3;
+
 	return ithc_start(pci);
 }
 
@@ -508,25 +519,12 @@ static void ithc_remove(struct pci_dev *pci) {
 
 static int ithc_suspend(struct device *dev) {
 	struct pci_dev *pci = to_pci_dev(dev);
-	struct ithc *ithc = dev_get_drvdata(dev);
 	pci_dbg(pci, "pm suspend\n");
-
-	if (ithc->hid) hid_driver_suspend(ithc->hid, PMSG_SUSPEND);
-
-	bitsl_set(&ithc->regs->control_bits, CONTROL_QUIESCE);
-	CHECK(waitl, ithc, &ithc->regs->control_bits, CONTROL_IS_QUIESCED, CONTROL_IS_QUIESCED);
-
-	bitsb(&ithc->regs->dma_rx[0].control, DMA_RX_CONTROL_ENABLE, 0);
-	bitsb(&ithc->regs->dma_rx[1].control, DMA_RX_CONTROL_ENABLE, 0);
-	CHECK(waitl, ithc, &ithc->regs->dma_rx[0].status, DMA_RX_STATUS_ENABLED, 0);
-	CHECK(waitl, ithc, &ithc->regs->dma_rx[1].status, DMA_RX_STATUS_ENABLED, 0);
-
-	msleep_interruptible(100);
-	CHECK_RET(ithc_set_device_enabled, ithc, false);
-	CHECK(waitl, ithc, &ithc->regs->dma_rx[1].status, DMA_RX_STATUS_HAVE_DATA, 0);
-	msleep_interruptible(100);
-
-	pci_disable_device(pci);
+	if (ithc_no_suspend) {
+		pci_disable_device(pci);
+		return 0;
+	}
+	devres_release_group(dev, ithc_start);
 	return 0;
 }
 
@@ -534,21 +532,12 @@ static int ithc_resume(struct device *dev) {
 	struct pci_dev *pci = to_pci_dev(dev);
 	struct ithc *ithc = dev_get_drvdata(dev);
 	pci_dbg(pci, "pm resume\n");
-
-	CHECK_RET(pcim_enable_device, pci);
-	pci_set_master(pci);
-
-	bitsl(&ithc->regs->control_bits, CONTROL_QUIESCE, 0);
-	CHECK(waitl, ithc, &ithc->regs->control_bits, CONTROL_IS_QUIESCED, 0);
-
-	CHECK_RET(ithc_set_device_enabled, ithc, true);
-	msleep_interruptible(100);
-
-	if (ithc_use_rx0) ithc_dma_rx_enable(ithc, 0);
-	if (ithc_use_rx1) ithc_dma_rx_enable(ithc, 1);
-
-	if (ithc->hid) hid_driver_resume(ithc->hid);
-	return 0;
+	if (ithc_no_suspend) {
+		CHECK_RET(pcim_enable_device, pci);
+		pci_set_master(pci);
+		return 0;
+	}
+	return ithc_start(pci);
 }
 
 static int ithc_freeze(struct device *dev) {
