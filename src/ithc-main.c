@@ -318,7 +318,7 @@ static int ithc_poll_thread(void *arg) {
 
 static void ithc_disable(struct ithc *ithc) {
 	bitsl_set(&ithc->regs->control_bits, CONTROL_QUIESCE);
-	waitl(ithc, &ithc->regs->control_bits, CONTROL_IS_QUIESCED, CONTROL_IS_QUIESCED);
+	CHECK(waitl, ithc, &ithc->regs->control_bits, CONTROL_IS_QUIESCED, CONTROL_IS_QUIESCED);
 	bitsl(&ithc->regs->control_bits, CONTROL_NRESET, 0);
 	bitsb(&ithc->regs->spi_cmd.control, SPI_CMD_CONTROL_SEND, 0);
 	bitsb(&ithc->regs->dma_tx.control, DMA_TX_CONTROL_SEND, 0);
@@ -509,17 +509,14 @@ static void ithc_remove(struct pci_dev *pci) {
 static int ithc_suspend(struct device *dev) {
 	struct pci_dev *pci = to_pci_dev(dev);
 	pci_dbg(pci, "pm suspend\n");
-	pci_disable_device(pci);
+	devres_release_group(dev, ithc_start);
 	return 0;
 }
 
 static int ithc_resume(struct device *dev) {
 	struct pci_dev *pci = to_pci_dev(dev);
-	struct ithc *ithc = dev_get_drvdata(dev);
 	pci_dbg(pci, "pm resume\n");
-	CHECK_RET(pcim_enable_device, pci);
-	pci_set_master(pci);
-	return 0;
+	return ithc_start(pci);
 }
 
 static int ithc_freeze(struct device *dev) {

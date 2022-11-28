@@ -134,6 +134,7 @@ int ithc_dma_rx_init(struct ithc *ithc, u8 channel, const char *devname) {
 }
 void ithc_dma_rx_enable(struct ithc *ithc, u8 channel) {
 	bitsb_set(&ithc->regs->dma_rx[channel].control, DMA_RX_CONTROL_ENABLE | DMA_RX_CONTROL_IRQ_ERROR | DMA_RX_CONTROL_IRQ_DATA);
+	CHECK(waitl, ithc, &ithc->regs->dma_rx[1].status, DMA_RX_STATUS_ENABLED, DMA_RX_STATUS_ENABLED);
 }
 
 int ithc_dma_tx_init(struct ithc *ithc) {

@@ -76,7 +76,5 @@ void ithc_dma_rx_enable(struct ithc *ithc, u8 channel);
 int ithc_dma_tx_init(struct ithc *ithc);
 int ithc_dma_rx(struct ithc *ithc, u8 channel);
 int ithc_dma_tx(struct ithc *ithc, u32 cmdcode, u32 datasize, void *cmddata);
-void *ithc_data_kmap(struct ithc_dma_data_buffer *b);
-void ithc_data_kunmap(struct ithc_dma_data_buffer *b, void *p);
 int ithc_set_multitouch(struct ithc *ithc, bool enable);
 
