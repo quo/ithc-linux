@@ -52,9 +52,3 @@ run:
 	sudo $(MAKE) install
 	sudo modprobe ithc
 
-$(DEST)/%: src/%.c
-	mkdir -p $(DEST)
-	$(CC) $(CFLAGS) -W -Wall -Wextra -Werror -o $@ $<
-
-dump: $(DEST)/ithc-dump
-

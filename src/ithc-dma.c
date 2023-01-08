@@ -113,23 +113,21 @@ static int ithc_dma_data_buffer_get(struct ithc *ithc, struct ithc_dma_prd_buffe
 int ithc_dma_rx_init(struct ithc *ithc, u8 channel, const char *devname) {
 	struct ithc_dma_rx *rx = &ithc->dma_rx[channel];
 	mutex_init(&rx->mutex);
-	init_waitqueue_head(&rx->wait);
 	u32 buf_size = DEVCFG_DMA_RX_SIZE(ithc->config.dma_buf_sizes);
 	unsigned num_pages = (buf_size + PAGE_SIZE - 1) / PAGE_SIZE;
-	pci_dbg(ithc->pci, "allocating rx buffers: num = %u, size = %u, pages = %u\n", NUM_RX_ALLOC, buf_size, num_pages);
-	CHECK_RET(ithc_dma_prd_alloc, ithc, &rx->prds, NUM_RX_ALLOC, num_pages, DMA_FROM_DEVICE);
-	for (unsigned i = 0; i < NUM_RX_ALLOC; i++)
+	pci_dbg(ithc->pci, "allocating rx buffers: num = %u, size = %u, pages = %u\n", NUM_RX_BUF, buf_size, num_pages);
+	CHECK_RET(ithc_dma_prd_alloc, ithc, &rx->prds, NUM_RX_BUF, num_pages, DMA_FROM_DEVICE);
+	for (unsigned i = 0; i < NUM_RX_BUF; i++)
 		CHECK_RET(ithc_dma_data_alloc, ithc, &rx->prds, &rx->bufs[i]);
 	writeb(DMA_RX_CONTROL2_RESET, &ithc->regs->dma_rx[channel].control2);
 	lo_hi_writeq(rx->prds.dma_addr, &ithc->regs->dma_rx[channel].addr);
-	writeb(NUM_RX_DEV - 1, &ithc->regs->dma_rx[channel].num_bufs);
+	writeb(NUM_RX_BUF - 1, &ithc->regs->dma_rx[channel].num_bufs);
 	writeb(num_pages - 1, &ithc->regs->dma_rx[channel].num_prds);
 	u8 head = readb(&ithc->regs->dma_rx[channel].head);
 	if (head) { pci_err(ithc->pci, "head is nonzero (%u)\n", head); return -EIO; }
-	for (unsigned i = 0; i < NUM_RX_DEV; i++)
+	for (unsigned i = 0; i < NUM_RX_BUF; i++)
 		CHECK_RET(ithc_dma_data_buffer_put, ithc, &rx->prds, &rx->bufs[i], i);
 	writeb(head ^ DMA_RX_WRAP_FLAG, &ithc->regs->dma_rx[channel].tail);
-	ithc_api_init(ithc, rx, devname);
 	return 0;
 }
 void ithc_dma_rx_enable(struct ithc *ithc, u8 channel) {
@@ -152,7 +150,7 @@ int ithc_dma_tx_init(struct ithc *ithc) {
 }
 
 static int ithc_dma_rx_process_buf(struct ithc *ithc, struct ithc_dma_data_buffer *data, u8 channel, u8 buf) {
-	if (buf >= NUM_RX_DEV) {
+	if (buf >= NUM_RX_BUF) {
 		pci_err(ithc->pci, "invalid dma ringbuffer index\n");
 		return -EINVAL;
 	}
@@ -160,7 +158,6 @@ static int ithc_dma_rx_process_buf(struct ithc *ithc, struct ithc_dma_data_buffe
 	u32 len = data->data_size;
 	struct ithc_dma_rx_header *hdr = data->addr;
 	u8 *hiddata = (void *)(hdr + 1);
-	struct ithc_hid_report_singletouch *st = (void *)hiddata;
 	if (len >= sizeof *hdr && hdr->code == DMA_RX_CODE_RESET) {
 		CHECK(ithc_reset, ithc);
 	} else if (len < sizeof *hdr || len != sizeof *hdr + hdr->data_size) {
@@ -172,18 +169,13 @@ static int ithc_dma_rx_process_buf(struct ithc *ithc, struct ithc_dma_data_buffe
 			pci_err(ithc->pci, "invalid dma rx data! channel %u, buffer %u, size %u, code %u, data size %u\n", channel, buf, len, hdr->code, hdr->data_size);
 			print_hex_dump_debug(DEVNAME " data: ", DUMP_PREFIX_OFFSET, 32, 1, hdr, min(len, 0x400u), 0);
 		}
-	} else if (ithc->input && hdr->code == DMA_RX_CODE_INPUT_REPORT && hdr->data_size == sizeof *st && st->report_id == HID_REPORT_ID_SINGLETOUCH) {
-		input_report_key(ithc->input, BTN_TOUCH, st->button);
-		input_report_abs(ithc->input, ABS_X, st->x);
-		input_report_abs(ithc->input, ABS_Y, st->y);
-		input_sync(ithc->input);
-	} else if (ithc->hid && hdr->code == DMA_RX_CODE_REPORT_DESCRIPTOR && hdr->data_size > 8) {
+	} else if (hdr->code == DMA_RX_CODE_REPORT_DESCRIPTOR && hdr->data_size > 8) {
 		CHECK(hid_parse_report, ithc->hid, hiddata + 8, hdr->data_size - 8);
 		WRITE_ONCE(ithc->hid_parse_done, true);
 		wake_up(&ithc->wait_hid_parse);
-	} else if (ithc->hid && hdr->code == DMA_RX_CODE_INPUT_REPORT) {
+	} else if (hdr->code == DMA_RX_CODE_INPUT_REPORT) {
 		CHECK(hid_input_report, ithc->hid, HID_INPUT_REPORT, hiddata, hdr->data_size, 1);
-	} else if (ithc->hid && hdr->code == DMA_RX_CODE_FEATURE_REPORT) {
+	} else if (hdr->code == DMA_RX_CODE_FEATURE_REPORT) {
 		bool done = false;
 		mutex_lock(&ithc->hid_get_feature_mutex);
 		if (ithc->hid_get_feature_buf) {
@@ -204,30 +196,26 @@ static int ithc_dma_rx_process_buf(struct ithc *ithc, struct ithc_dma_data_buffe
 
 static int ithc_dma_rx_unlocked(struct ithc *ithc, u8 channel) {
 	struct ithc_dma_rx *rx = &ithc->dma_rx[channel];
-	// buf idx tail..tail+NUM_RX_DEV-1 are mapped as dev idx tail%NUM_RX_DEV..
-	// tail+NUM_RX_DEV = oldest unmapped buffer
 	unsigned n = rx->num_received;
 	u8 head_wrap = readb(&ithc->regs->dma_rx[channel].head);
 	while (1) {
-		u8 tail = n % NUM_RX_DEV;
-		u8 tail_wrap = tail | ((n / NUM_RX_DEV) & 1 ? 0 : DMA_RX_WRAP_FLAG);
+		u8 tail = n % NUM_RX_BUF;
+		u8 tail_wrap = tail | ((n / NUM_RX_BUF) & 1 ? 0 : DMA_RX_WRAP_FLAG);
 		writeb(tail_wrap, &ithc->regs->dma_rx[channel].tail);
 		// ringbuffer is full if tail_wrap == head_wrap
 		// ringbuffer is empty if tail_wrap == head_wrap ^ WRAP_FLAG
 		if (tail_wrap == (head_wrap ^ DMA_RX_WRAP_FLAG)) return 0;
 
 		// take the buffer that the device just filled
-		struct ithc_dma_data_buffer *b = &rx->bufs[n % NUM_RX_ALLOC];
+		struct ithc_dma_data_buffer *b = &rx->bufs[n % NUM_RX_BUF];
 		CHECK_RET(ithc_dma_data_buffer_get, ithc, &rx->prds, b, tail);
-		// give the oldest buffer we have back to the device to replace the buffer we took
-		CHECK_RET(ithc_dma_data_buffer_put, ithc, &rx->prds, &rx->bufs[(n + NUM_RX_DEV) % NUM_RX_ALLOC], tail);
 		rx->num_received = ++n;
-		WRITE_ONCE(rx->pos, READ_ONCE(rx->pos) + sizeof(struct ithc_api_header) + b->data_size);
 
 		// process data
 		CHECK(ithc_dma_rx_process_buf, ithc, b, channel, tail);
 
-		wake_up(&rx->wait);
+		// give the buffer back to the device
+		CHECK_RET(ithc_dma_data_buffer_put, ithc, &rx->prds, b, tail);
 	}
 }
 int ithc_dma_rx(struct ithc *ithc, u8 channel) {
@@ -266,11 +254,5 @@ int ithc_dma_tx(struct ithc *ithc, u32 cmdcode, u32 datasize, void *data) {
 	int ret = ithc_dma_tx_unlocked(ithc, cmdcode, datasize, data);
 	mutex_unlock(&ithc->dma_tx.mutex);
 	return ret;
-}
-
-int ithc_set_multitouch(struct ithc *ithc, bool enable) {
-	pci_info(ithc->pci, "%s multi-touch mode\n", enable ? "enabling" : "disabling");
-	struct ithc_hid_feature_multitouch data = { .feature_id = HID_FEATURE_ID_MULTITOUCH, .enable = enable };
-	return ithc_dma_tx(ithc, DMA_TX_CODE_SET_FEATURE, sizeof data, &data);
 }
 

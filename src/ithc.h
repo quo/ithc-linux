@@ -23,18 +23,12 @@
 #define CHECK(fn, ...) ({ int r = fn(__VA_ARGS__); if (r < 0) pci_err(ithc->pci, "%s: %s failed with %i\n", __func__, #fn, r); r; })
 #define CHECK_RET(...) do { int r = CHECK(__VA_ARGS__); if (r < 0) return r; } while(0)
 
-// We allocate NUM_RX_ALLOC buffers, and take a sliding window of NUM_RX_DEV buffers from that to populate the device ringbuffer.
-// The remaining buffers outside the window contain old data that we keep around for sending to userspace.
-#define NUM_RX_ALLOC 32
-#define NUM_RX_DEV   16
-_Static_assert(NUM_RX_ALLOC % NUM_RX_DEV == 0, "NUM_RX_ALLOC must be a multiple of NUM_RX_DEV");
+#define NUM_RX_BUF 16
 
 struct ithc;
-struct ithc_api;
 
 #include "ithc-regs.h"
 #include "ithc-dma.h"
-#include "ithc-api.h"
 
 struct ithc {
 	char phys[32];
@@ -43,8 +37,6 @@ struct ithc {
 	struct task_struct *poll_thread;
 	struct pm_qos_request activity_qos;
 	struct timer_list activity_timer;
-
-	struct input_dev *input;
 
 	struct hid_device *hid;
 	bool hid_parse_done;

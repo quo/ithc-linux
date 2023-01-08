@@ -25,20 +25,6 @@ struct ithc_dma_tx_header {
 	u32 data_size;
 };
 
-#define HID_REPORT_ID_SINGLETOUCH 0x40
-struct ithc_hid_report_singletouch {
-	u8 report_id;
-	u8 button;
-	u16 x;
-	u16 y;
-};
-
-#define HID_FEATURE_ID_MULTITOUCH 5
-struct ithc_hid_feature_multitouch {
-	u8 feature_id;
-	u8 enable;
-};
-
 struct ithc_dma_prd_buffer {
 	void *addr;
 	dma_addr_t dma_addr;
@@ -64,11 +50,8 @@ struct ithc_dma_tx {
 struct ithc_dma_rx {
 	struct mutex mutex;
 	u32 num_received;
-	loff_t pos;
-	struct ithc_api *api;
 	struct ithc_dma_prd_buffer prds;
-	struct ithc_dma_data_buffer bufs[NUM_RX_ALLOC];
-	wait_queue_head_t wait;
+	struct ithc_dma_data_buffer bufs[NUM_RX_BUF];
 };
 
 int ithc_dma_rx_init(struct ithc *ithc, u8 channel, const char *devname);
@@ -76,5 +59,4 @@ void ithc_dma_rx_enable(struct ithc *ithc, u8 channel);
 int ithc_dma_tx_init(struct ithc *ithc);
 int ithc_dma_rx(struct ithc *ithc, u8 channel);
 int ithc_dma_tx(struct ithc *ithc, u32 cmdcode, u32 datasize, void *cmddata);
-int ithc_set_multitouch(struct ithc *ithc, bool enable);
 

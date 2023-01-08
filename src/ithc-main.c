@@ -52,10 +52,6 @@ static bool ithc_use_polling = false;
 module_param_named(poll, ithc_use_polling, bool, 0);
 MODULE_PARM_DESC(poll, "Use polling instead of interrupts");
 
-static bool ithc_use_hid = true;
-module_param_named(hid, ithc_use_hid, bool, 0);
-MODULE_PARM_DESC(hid, "Operate as an HID transport driver instead of an input driver");
-
 static bool ithc_use_rx0 = false;
 module_param_named(rx0, ithc_use_rx0, bool, 0);
 MODULE_PARM_DESC(rx0, "Use DMA RX channel 0");
@@ -114,7 +110,7 @@ static const struct attribute_group *ithc_attribute_groups[] = {
 	NULL
 };
 
-// HID/input setup
+// HID setup
 
 static int ithc_hid_start(struct hid_device *hdev) { return 0; }
 static void ithc_hid_stop(struct hid_device *hdev) { }
@@ -197,29 +193,6 @@ static int ithc_hid_init(struct ithc *ithc) {
 	hid->driver_data = ithc;
 
 	ithc->hid = hid;
-	return 0;
-}
-
-static int ithc_input_init(struct ithc *ithc) {
-	struct input_dev *d = devm_input_allocate_device(&ithc->pci->dev);
-	if (!d) return -ENOMEM;
-
-	d->name = DEVFULLNAME;
-	d->phys = ithc->phys;
-	d->id.bustype = BUS_PCI;
-	d->id.vendor = ithc->config.vendor_id;
-	d->id.product = ithc->config.product_id;
-	d->id.version = ithc->config.revision;
-	d->dev.parent = &ithc->pci->dev;
-
-	__set_bit(INPUT_PROP_DIRECT, d->propbit);
-	input_set_capability(d, EV_KEY, BTN_TOUCH);
-	input_set_abs_params(d, ABS_X, 0, 32767, 0, 0);
-	input_set_abs_params(d, ABS_Y, 0, 32767, 0, 0);
-
-	CHECK_RET(input_register_device, d);
-
-	ithc->input = d;
 	return 0;
 }
 
@@ -380,16 +353,12 @@ static int ithc_init_device(struct ithc *ithc) {
 }
 
 int ithc_reset(struct ithc *ithc) {
+	// FIXME This should probably do devres_release_group()+ithc_start(). But because this is called during DMA
+	// processing, that would have to be done asynchronously (schedule_work()?). And with extra locking?
 	pci_err(ithc->pci, "reset\n");
 	CHECK(ithc_init_device, ithc);
-	if (ithc_use_rx0) {
-		ithc_dma_rx_enable(ithc, 0);
-		if (ithc->dma_rx[0].api && atomic_read(&ithc->dma_rx[0].api->open_count)) CHECK(ithc_set_multitouch, ithc, true);
-	}
-	if (ithc_use_rx1) {
-		ithc_dma_rx_enable(ithc, 1);
-		if (ithc->dma_rx[1].api && atomic_read(&ithc->dma_rx[1].api->open_count)) CHECK(ithc_set_multitouch, ithc, true);
-	}
+	if (ithc_use_rx0) ithc_dma_rx_enable(ithc, 0);
+	if (ithc_use_rx1) ithc_dma_rx_enable(ithc, 1);
 	ithc_log_regs(ithc);
 	pci_dbg(ithc->pci, "reset completed\n");
 	return 0;
@@ -462,8 +431,7 @@ static int ithc_start(struct pci_dev *pci) {
 	if (ithc_use_rx1) CHECK_RET(ithc_dma_rx_init, ithc, 1, ithc_use_rx0 ? DEVNAME "1" : DEVNAME);
 	CHECK_RET(ithc_dma_tx_init, ithc);
 
-	if (ithc_use_hid) CHECK_RET(ithc_hid_init, ithc);
-	else CHECK_RET(ithc_input_init, ithc);
+	CHECK_RET(ithc_hid_init, ithc);
 
 	cpu_latency_qos_add_request(&ithc->activity_qos, PM_QOS_DEFAULT_VALUE);
 	timer_setup(&ithc->activity_timer, ithc_activity_timer_callback, 0);
@@ -488,7 +456,7 @@ static int ithc_start(struct pci_dev *pci) {
 	if (ithc_use_rx1) ithc_dma_rx_enable(ithc, 1);
 
 	// hid_add_device can only be called after irq/polling is started and DMA is enabled, because it calls ithc_hid_parse which reads the report descriptor via DMA
-	if (ithc->hid) CHECK_RET(hid_add_device, ithc->hid);
+	CHECK_RET(hid_add_device, ithc->hid);
 
 	CHECK(ithc_debug_init, ithc);
 
