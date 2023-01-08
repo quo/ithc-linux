@@ -2,7 +2,8 @@
 
 void ithc_log_regs(struct ithc *ithc) {
 	if (!ithc->prev_regs) return;
-	u32 *cur = (void*)ithc->regs, *prev = (void*)ithc->prev_regs;
+	u32 __iomem *cur = (__iomem void*)ithc->regs;
+	u32 *prev = (void*)ithc->prev_regs;
 	for (int i = 1024; i < sizeof *ithc->regs / 4; i++) {
 		u32 x = readl(cur + i);
 		if (x != prev[i]) {
@@ -41,11 +42,11 @@ static ssize_t ithc_debugfs_cmd_write(struct file *f, const char __user *buf, si
 	case 'w': // write register: offset mask value
 		if (n != 3 || (a[0] & 3)) return -EINVAL;
 		pci_info(ithc->pci, "debug write 0x%04x = 0x%08x (mask 0x%08x)\n", a[0], a[2], a[1]);
-		bitsl(((u32 *)ithc->regs) + a[0] / 4, a[1], a[2]);
+		bitsl(((__iomem u32 *)ithc->regs) + a[0] / 4, a[1], a[2]);
 		break;
 	case 'r': // read register: offset
 		if (n != 1 || (a[0] & 3)) return -EINVAL;
-		pci_info(ithc->pci, "debug read 0x%04x = 0x%08x\n", a[0], readl(((u32 *)ithc->regs) + a[0] / 4));
+		pci_info(ithc->pci, "debug read 0x%04x = 0x%08x\n", a[0], readl(((__iomem u32 *)ithc->regs) + a[0] / 4));
 		break;
 	case 's': // spi command: cmd offset len data...
 		// read config: s 4 0 64 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0

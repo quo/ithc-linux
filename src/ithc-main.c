@@ -75,26 +75,26 @@ static ssize_t vendor_show(struct device *dev, struct device_attribute *attr, ch
 	if (!ithc || !ithc_is_config_valid(ithc)) return -ENODEV;
 	return sprintf(buf, "0x%04x", ithc->config.vendor_id);
 }
-DEVICE_ATTR_RO(vendor);
+static DEVICE_ATTR_RO(vendor);
 static ssize_t product_show(struct device *dev, struct device_attribute *attr, char *buf) {
 	struct ithc *ithc = dev_get_drvdata(dev);
 	if (!ithc || !ithc_is_config_valid(ithc)) return -ENODEV;
 	return sprintf(buf, "0x%04x", ithc->config.product_id);
 }
-DEVICE_ATTR_RO(product);
+static DEVICE_ATTR_RO(product);
 static ssize_t revision_show(struct device *dev, struct device_attribute *attr, char *buf) {
 	struct ithc *ithc = dev_get_drvdata(dev);
 	if (!ithc || !ithc_is_config_valid(ithc)) return -ENODEV;
 	return sprintf(buf, "%u", ithc->config.revision);
 }
-DEVICE_ATTR_RO(revision);
+static DEVICE_ATTR_RO(revision);
 static ssize_t fw_version_show(struct device *dev, struct device_attribute *attr, char *buf) {
 	struct ithc *ithc = dev_get_drvdata(dev);
 	if (!ithc || !ithc_is_config_valid(ithc)) return -ENODEV;
 	u32 v = ithc->config.fw_version;
 	return sprintf(buf, "%i.%i.%i.%i", v >> 24, v >> 16 & 0xff, v >> 8 & 0xff, v & 0xff);
 }
-DEVICE_ATTR_RO(fw_version);
+static DEVICE_ATTR_RO(fw_version);
 
 static const struct attribute_group *ithc_attribute_groups[] = {
 	&(const struct attribute_group){

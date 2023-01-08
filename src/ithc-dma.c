@@ -70,7 +70,7 @@ static int ithc_dma_data_buffer_put(struct ithc *ithc, struct ithc_dma_prd_buffe
 	if (prds->dir == DMA_TO_DEVICE) {
 		if (b->data_size > PAGE_SIZE) return -EINVAL;
 		prd->addr = sg_dma_address(b->sgt->sgl) >> 10;
-		prd->size = b->data_size | PRD_END_FLAG;
+		prd->size = b->data_size | PRD_FLAG_END;
 		flush_kernel_vmap_range(b->addr, b->data_size);
 	} else if (prds->dir == DMA_FROM_DEVICE) {
 		struct scatterlist *sg;
@@ -80,7 +80,7 @@ static int ithc_dma_data_buffer_put(struct ithc *ithc, struct ithc_dma_prd_buffe
 			prd->size = sg_dma_len(sg);
 			prd++;
 		}
-		prd[-1].size |= PRD_END_FLAG;
+		prd[-1].size |= PRD_FLAG_END;
 	}
 	dma_wmb(); // for the prds
 	dma_sync_sgtable_for_device(&ithc->pci->dev, b->sgt, prds->dir);
@@ -100,7 +100,7 @@ static int ithc_dma_data_buffer_get(struct ithc *ithc, struct ithc_dma_prd_buffe
 		for_each_sgtable_dma_sg(b->sgt, sg, i) {
 			unsigned size = prd->size;
 			b->data_size += size & PRD_SIZE_MASK;
-			if (size & PRD_END_FLAG) break;
+			if (size & PRD_FLAG_END) break;
 			if ((size & PRD_SIZE_MASK) != sg_dma_len(sg)) { pci_err(ithc->pci, "truncated prd\n"); break; }
 			prd++;
 		}

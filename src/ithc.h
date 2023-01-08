@@ -46,7 +46,7 @@ struct ithc {
 	void *hid_get_feature_buf;
 	size_t hid_get_feature_size;
 
-	struct ithc_registers *regs;
+	struct ithc_registers __iomem *regs;
 	struct ithc_registers *prev_regs; // for debugging
 	struct ithc_device_config config;
 	struct ithc_dma_rx dma_rx[2];

@@ -1,8 +1,11 @@
 #define PRD_SIZE_MASK            0xffffff
-#define PRD_END_FLAG             0x1000000
+#define PRD_FLAG_END             0x1000000
+#define PRD_FLAG_SUCCESS         0x2000000
+#define PRD_FLAG_ERROR           0x4000000
+
 struct ithc_phys_region_desc {
 	u64 addr; // physical addr/1024
-	u32 size; // num bytes, PRD_END_FLAG marks last prd for data split over multiple prds
+	u32 size; // num bytes, PRD_FLAG_END marks last prd for data split over multiple prds
 	u32 unused;
 };
 
@@ -10,6 +13,7 @@ struct ithc_phys_region_desc {
 #define DMA_RX_CODE_FEATURE_REPORT        4
 #define DMA_RX_CODE_REPORT_DESCRIPTOR     5
 #define DMA_RX_CODE_RESET                 7
+
 struct ithc_dma_rx_header {
 	u32 code;
 	u32 data_size;
@@ -20,6 +24,7 @@ struct ithc_dma_rx_header {
 #define DMA_TX_CODE_GET_FEATURE           4
 #define DMA_TX_CODE_OUTPUT_REPORT         5
 #define DMA_TX_CODE_GET_REPORT_DESCRIPTOR 7
+
 struct ithc_dma_tx_header {
 	u32 code;
 	u32 data_size;

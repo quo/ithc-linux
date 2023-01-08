@@ -1,18 +1,18 @@
 #include "ithc.h"
 
-#define reg_num(r) (0x1fff & (u16)(u64)(r))
+#define reg_num(r) (0x1fff & (u16)(__force u64)(r))
 
-void bitsl(u32 *reg, u32 mask, u32 val) {
+void bitsl(__iomem u32 *reg, u32 mask, u32 val) {
 	if (val & ~mask) pr_err("register 0x%x: invalid value 0x%x for bitmask 0x%x\n", reg_num(reg), val, mask);
 	writel((readl(reg) & ~mask) | (val & mask), reg);
 }
 
-void bitsb(u8 *reg, u8 mask, u8 val) {
+void bitsb(__iomem u8 *reg, u8 mask, u8 val) {
 	if (val & ~mask) pr_err("register 0x%x: invalid value 0x%x for bitmask 0x%x\n", reg_num(reg), val, mask);
 	writeb((readb(reg) & ~mask) | (val & mask), reg);
 }
 
-int waitl(struct ithc *ithc, u32 *reg, u32 mask, u32 val) {
+int waitl(struct ithc *ithc, __iomem u32 *reg, u32 mask, u32 val) {
 	pci_dbg(ithc->pci, "waiting for reg 0x%04x mask 0x%08x val 0x%08x\n", reg_num(reg), mask, val);
 	u32 x;
 	if (readl_poll_timeout(reg, x, (x & mask) == val, 200, 1000*1000)) {
@@ -23,7 +23,7 @@ int waitl(struct ithc *ithc, u32 *reg, u32 mask, u32 val) {
 	return 0;
 }
 
-int waitb(struct ithc *ithc, u8 *reg, u8 mask, u8 val) {
+int waitb(struct ithc *ithc, __iomem u8 *reg, u8 mask, u8 val) {
 	pci_dbg(ithc->pci, "waiting for reg 0x%04x mask 0x%02x val 0x%02x\n", reg_num(reg), mask, val);
 	u8 x;
 	if (readb_poll_timeout(reg, x, (x & mask) == val, 200, 1000*1000)) {

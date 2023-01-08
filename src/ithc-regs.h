@@ -128,7 +128,7 @@ struct ithc_registers {
 		/* 11b8/12b8 */ u32 _unknown_11b8[18];
 	} dma_rx[2];
 };
-_Static_assert(sizeof(struct ithc_registers) == 0x1300);
+static_assert(sizeof(struct ithc_registers) == 0x1300);
 
 #define DEVCFG_DMA_RX_SIZE(x)          ((((x) & 0x3fff) + 1) << 6)
 #define DEVCFG_DMA_TX_SIZE(x)          (((((x) >> 14) & 0x3ff) + 1) << 6)
@@ -175,12 +175,12 @@ struct ithc_device_config {
 	u32 _unknown_3c;      // 3c = 0x00000002
 };
 
-void bitsl(u32 *reg, u32 mask, u32 val);
-void bitsb(u8 *reg, u8 mask, u8 val);
+void bitsl(__iomem u32 *reg, u32 mask, u32 val);
+void bitsb(__iomem u8 *reg, u8 mask, u8 val);
 #define bitsl_set(reg, x) bitsl(reg, x, x)
 #define bitsb_set(reg, x) bitsb(reg, x, x)
-int waitl(struct ithc *ithc, u32 *reg, u32 mask, u32 val);
-int waitb(struct ithc *ithc, u8 *reg, u8 mask, u8 val);
+int waitl(struct ithc *ithc, __iomem u32 *reg, u32 mask, u32 val);
+int waitb(struct ithc *ithc, __iomem u8 *reg, u8 mask, u8 val);
 int ithc_set_spi_config(struct ithc *ithc, u8 speed, u8 mode);
 int ithc_spi_command(struct ithc *ithc, u8 command, u32 offset, u32 size, void *data);
 
