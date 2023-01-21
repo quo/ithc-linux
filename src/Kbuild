@@ -1,4 +1,4 @@
-obj-m := ithc.o
+obj-$(CONFIG_HID_ITHC) := ithc.o
 
 ithc-objs := ithc-main.o ithc-regs.o ithc-dma.o ithc-debug.o
 
