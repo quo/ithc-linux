@@ -5,10 +5,10 @@ default:
 	mkdir -p $(DEST)
 	find $(DEST)/ -type l -exec rm {} +
 	ln -sr src/* $(DEST)/
-	$(MAKE) -C $(KDIR) M=$(abspath $(DEST))
+	$(MAKE) -C $(KDIR) M=$(abspath $(DEST)) CONFIG_HID_ITHC=m
 
 install:
-	$(MAKE) -C $(KDIR) M=$(abspath $(DEST)) modules_install
+	$(MAKE) -C $(KDIR) M=$(abspath $(DEST)) CONFIG_HID_ITHC=m modules_install
 	depmod -a
 	sync
 
