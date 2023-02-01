@@ -16,6 +16,7 @@ PKG_NAME := `sed -n '/^PACKAGE_NAME="\(.*\)"$$/s//\1/p' dkms.conf`
 PKG_VER := `sed -n '/^PACKAGE_VERSION="\(.*\)"$$/s//\1/p' dkms.conf`
 DKMS_DIR = /usr/src/$(PKG_NAME)-$(PKG_VER)
 DKMS_PKG = $(PKG_NAME)/$(PKG_VER)
+DKMS_STAGING = /var/lib/dkms/$(PKG_NAME)
 
 dkms-install:
 	-test -e $(DKMS_DIR) && $(MAKE) dkms-uninstall
@@ -31,6 +32,7 @@ dkms-uninstall:
 	-dkms uninstall $(DKMS_PKG)
 	-dkms remove $(DKMS_PKG)
 	-rm -rf $(DKMS_DIR)
+	-rm -rf $(DKMS_STAGING)
 	sync
 
 set-nosid:
