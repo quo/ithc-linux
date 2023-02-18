@@ -28,8 +28,8 @@ dkms-install:
 
 dkms-uninstall:
 	-modprobe -r ithc
-	-dkms uninstall $(DKMS_PKG)
-	-dkms remove $(DKMS_PKG)
+	-dkms uninstall $(DKMS_PKG) --all
+	-dkms remove $(DKMS_PKG) --all
 	-rm -rf $(DKMS_DIR)
 	sync
 
