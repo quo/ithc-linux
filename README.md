@@ -35,5 +35,5 @@ To enable multitouch functionality, you will need to install iptsd.
 To enable debug logging use the module parameter `dyndbg=+pflmt`.
 
 
-License: Public domain/CC0.
+License: Public domain/CC0 (or GPL2 or BSD-2-Clause if you prefer).
 

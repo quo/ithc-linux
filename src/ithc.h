@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: GPL-2.0 OR BSD-2-Clause */
+
 #include <linux/module.h>
 #include <linux/input.h>
 #include <linux/hid.h>
@@ -21,7 +23,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #define CHECK(fn, ...) ({ int r = fn(__VA_ARGS__); if (r < 0) pci_err(ithc->pci, "%s: %s failed with %i\n", __func__, #fn, r); r; })
-#define CHECK_RET(...) do { int r = CHECK(__VA_ARGS__); if (r < 0) return r; } while(0)
+#define CHECK_RET(...) do { int r = CHECK(__VA_ARGS__); if (r < 0) return r; } while (0)
 
 #define NUM_RX_BUF 16
 

@@ -52,3 +52,6 @@ run:
 	sudo $(MAKE) install
 	sudo modprobe ithc
 
+checkpatch:
+	$(KDIR)/scripts/checkpatch.pl -f -q --no-tree --show-types --ignore TABSTOP,BLOCK_COMMENT_STYLE,LINE_SPACING src/*
+
