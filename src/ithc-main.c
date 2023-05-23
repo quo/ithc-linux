@@ -245,7 +245,7 @@ static int ithc_hid_init(struct ithc *ithc)
 static void ithc_activity_timer_callback(struct timer_list *t)
 {
 	struct ithc *ithc = container_of(t, struct ithc, activity_timer);
-	cpu_latency_qos_update_request(&ithc->activity_qos, PM_QOS_DEFAULT_VALUE);
+	cpu_latency_qos_update_request(&ithc->activity_qos, PM_QOS_CPU_LATENCY_DEFAULT_VALUE);
 }
 
 void ithc_set_active(struct ithc *ithc)
@@ -540,7 +540,7 @@ static int ithc_start(struct pci_dev *pci)
 
 	CHECK_RET(ithc_hid_init, ithc);
 
-	cpu_latency_qos_add_request(&ithc->activity_qos, PM_QOS_DEFAULT_VALUE);
+	cpu_latency_qos_add_request(&ithc->activity_qos, PM_QOS_CPU_LATENCY_DEFAULT_VALUE);
 	timer_setup(&ithc->activity_timer, ithc_activity_timer_callback, 0);
 
 	// Add ithc_stop() callback AFTER setting up DMA buffers, so that polling/irqs/DMA are
