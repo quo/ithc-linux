@@ -37,8 +37,13 @@ struct ithc {
 	struct pci_dev *pci;
 	int irq;
 	struct task_struct *poll_thread;
+
 	struct pm_qos_request activity_qos;
-	struct timer_list activity_timer;
+	struct hrtimer activity_start_timer;
+	struct hrtimer activity_end_timer;
+	ktime_t last_rx_time;
+	unsigned int cur_rx_seq_count;
+	unsigned int cur_rx_seq_errors;
 
 	struct hid_device *hid;
 	bool hid_parse_done;
@@ -56,7 +61,7 @@ struct ithc {
 };
 
 int ithc_reset(struct ithc *ithc);
-void ithc_set_active(struct ithc *ithc);
+void ithc_set_active(struct ithc *ithc, unsigned int duration_us);
 int ithc_debug_init(struct ithc *ithc);
 void ithc_log_regs(struct ithc *ithc);
 

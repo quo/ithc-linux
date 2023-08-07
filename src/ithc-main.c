@@ -66,6 +66,16 @@ static bool ithc_use_rx1 = true;
 module_param_named(rx1, ithc_use_rx1, bool, 0);
 MODULE_PARM_DESC(rx1, "Use DMA RX channel 1");
 
+// Values below 250 seem to work well on the SP7+. If this is set too high, you may observe cursor stuttering.
+static int ithc_dma_latency_us = 200;
+module_param_named(dma_latency_us, ithc_dma_latency_us, int, 0);
+MODULE_PARM_DESC(dma_latency_us, "Determines the CPU latency QoS value for DMA transfers (in microseconds), -1 to disable latency QoS");
+
+// Values above 1700 seem to work well on the SP7+. If this is set too low, you may observe cursor stuttering.
+static unsigned int ithc_dma_early_us = 2000;
+module_param_named(dma_early_us, ithc_dma_early_us, uint, 0);
+MODULE_PARM_DESC(dma_early_us, "Determines how early the CPU latency QoS value is applied before the next expected IRQ (in microseconds)");
+
 static bool ithc_log_regs_enabled = false;
 module_param_named(logregs, ithc_log_regs_enabled, bool, 0);
 MODULE_PARM_DESC(logregs, "Log changes in register values (for debugging)");
@@ -242,21 +252,32 @@ static int ithc_hid_init(struct ithc *ithc)
 
 // Interrupts/polling
 
-static void ithc_activity_timer_callback(struct timer_list *t)
+static enum hrtimer_restart ithc_activity_start_timer_callback(struct hrtimer *t)
 {
-	struct ithc *ithc = container_of(t, struct ithc, activity_timer);
-	cpu_latency_qos_update_request(&ithc->activity_qos, PM_QOS_DEFAULT_VALUE);
+	struct ithc *ithc = container_of(t, struct ithc, activity_start_timer);
+	ithc_set_active(ithc, ithc_dma_early_us * 2 + USEC_PER_MSEC);
+	return HRTIMER_NORESTART;
 }
 
-void ithc_set_active(struct ithc *ithc)
+static enum hrtimer_restart ithc_activity_end_timer_callback(struct hrtimer *t)
 {
+	struct ithc *ithc = container_of(t, struct ithc, activity_end_timer);
+	cpu_latency_qos_update_request(&ithc->activity_qos, PM_QOS_DEFAULT_VALUE);
+	return HRTIMER_NORESTART;
+}
+
+void ithc_set_active(struct ithc *ithc, unsigned int duration_us)
+{
+	if (ithc_dma_latency_us < 0)
+		return;
 	// When CPU usage is very low, the CPU can enter various low power states (C2-C10).
-	// This disrupts DMA, causing truncated DMA messages. ERROR_FLAG_DMA_UNKNOWN_12 will be
+	// This disrupts DMA, causing truncated DMA messages. ERROR_FLAG_DMA_RX_TIMEOUT will be
 	// set when this happens. The amount of truncated messages can become very high, resulting
 	// in user-visible effects (laggy/stuttering cursor). To avoid this, we use a CPU latency
 	// QoS request to prevent the CPU from entering low power states during touch interactions.
-	cpu_latency_qos_update_request(&ithc->activity_qos, 0);
-	mod_timer(&ithc->activity_timer, jiffies + msecs_to_jiffies(1000));
+	cpu_latency_qos_update_request(&ithc->activity_qos, ithc_dma_latency_us);
+	hrtimer_start_range_ns(&ithc->activity_end_timer,
+		ns_to_ktime(duration_us * NSEC_PER_USEC), duration_us * NSEC_PER_USEC, HRTIMER_MODE_REL);
 }
 
 static int ithc_set_device_enabled(struct ithc *ithc, bool enable)
@@ -298,22 +319,57 @@ static void ithc_process(struct ithc *ithc)
 {
 	ithc_log_regs(ithc);
 
-	// read and clear error bits
-	u32 err = readl(&ithc->regs->error_flags);
-	if (err) {
-		if (err & ~ERROR_FLAG_DMA_UNKNOWN_12)
-			pci_err(ithc->pci, "error flags: 0x%08x\n", err);
-		writel(err, &ithc->regs->error_flags);
+	bool rx0 = ithc_use_rx0 && (readl(&ithc->regs->dma_rx[0].status) & (DMA_RX_STATUS_ERROR | DMA_RX_STATUS_HAVE_DATA)) != 0;
+	bool rx1 = ithc_use_rx1 && (readl(&ithc->regs->dma_rx[1].status) & (DMA_RX_STATUS_ERROR | DMA_RX_STATUS_HAVE_DATA)) != 0;
+
+	// Track time between DMA rx transfers, so we can try to predict when we need to enable CPU latency QoS for the next transfer
+	ktime_t t = ktime_get();
+	ktime_t dt = ktime_sub(t, ithc->last_rx_time);
+	if (rx0 || rx1) {
+		ithc->last_rx_time = t;
+		if (dt > ms_to_ktime(100)) {
+			ithc->cur_rx_seq_count = 0;
+			ithc->cur_rx_seq_errors = 0;
+		}
+		ithc->cur_rx_seq_count++;
+		if (!ithc_use_polling && ithc_dma_latency_us >= 0) {
+			// Disable QoS, since the DMA transfer has completed (we re-enable it after a delay below)
+			cpu_latency_qos_update_request(&ithc->activity_qos, PM_QOS_DEFAULT_VALUE);
+			hrtimer_try_to_cancel(&ithc->activity_end_timer);
+		}
 	}
 
-	// process DMA rx
+	// Read and clear error bits
+	u32 err = readl(&ithc->regs->error_flags);
+	if (err) {
+		writel(err, &ithc->regs->error_flags);
+		if (err & ~ERROR_FLAG_DMA_RX_TIMEOUT)
+			pci_err(ithc->pci, "error flags: 0x%08x\n", err);
+		if (err & ERROR_FLAG_DMA_RX_TIMEOUT) {
+			// Only log an error if we see a significant number of these errors.
+			ithc->cur_rx_seq_errors++;
+			if (ithc->cur_rx_seq_errors && ithc->cur_rx_seq_errors % 50 == 0 && ithc->cur_rx_seq_errors > ithc->cur_rx_seq_count / 10)
+				pci_err(ithc->pci, "High number of DMA RX timeouts/errors (%u/%u, dt=%lldus). Try adjusting dma_early_us and/or dma_latency_us.\n",
+					ithc->cur_rx_seq_errors, ithc->cur_rx_seq_count, ktime_to_us(dt));
+		}
+	}
+
+	// Process DMA rx
 	if (ithc_use_rx0) {
 		ithc_clear_dma_rx_interrupts(ithc, 0);
-		ithc_dma_rx(ithc, 0);
+		if (rx0)
+			ithc_dma_rx(ithc, 0);
 	}
 	if (ithc_use_rx1) {
 		ithc_clear_dma_rx_interrupts(ithc, 1);
-		ithc_dma_rx(ithc, 1);
+		if (rx1)
+			ithc_dma_rx(ithc, 1);
+	}
+
+	// Start timer to re-enable QoS for next rx, but only if we've seen an ERROR_FLAG_DMA_RX_TIMEOUT
+	if ((rx0 || rx1) && !ithc_use_polling && ithc_dma_latency_us >= 0 && ithc->cur_rx_seq_errors > 0) {
+		ktime_t expires = ktime_add(t, ktime_sub_us(dt, ithc_dma_early_us));
+		hrtimer_start_range_ns(&ithc->activity_start_timer, expires, 10 * NSEC_PER_USEC, HRTIMER_MODE_ABS);
 	}
 
 	ithc_log_regs(ithc);
@@ -341,10 +397,12 @@ static int ithc_poll_thread(void *arg)
 		ithc_process(ithc);
 		// Decrease polling interval to 20ms if we received data, otherwise slowly
 		// increase it up to 200ms.
-		if (n != ithc->dma_rx[1].num_received)
+		if (n != ithc->dma_rx[1].num_received) {
+			ithc_set_active(ithc, 100 * USEC_PER_MSEC);
 			sleep = 20;
-		else
+		} else {
 			sleep = min(200u, sleep + (sleep >> 4) + 1);
+		}
 		msleep_interruptible(sleep);
 	}
 	return 0;
@@ -465,7 +523,8 @@ static void ithc_stop(void *res)
 		disable_irq(ithc->irq);
 	CHECK(ithc_set_device_enabled, ithc, false);
 	ithc_disable(ithc);
-	del_timer_sync(&ithc->activity_timer);
+	hrtimer_cancel(&ithc->activity_start_timer);
+	hrtimer_cancel(&ithc->activity_end_timer);
 	cpu_latency_qos_remove_request(&ithc->activity_qos);
 
 	// Clear DMA config.
@@ -538,14 +597,17 @@ static int ithc_start(struct pci_dev *pci)
 		CHECK_RET(ithc_dma_rx_init, ithc, 1);
 	CHECK_RET(ithc_dma_tx_init, ithc);
 
-	CHECK_RET(ithc_hid_init, ithc);
-
 	cpu_latency_qos_add_request(&ithc->activity_qos, PM_QOS_DEFAULT_VALUE);
-	timer_setup(&ithc->activity_timer, ithc_activity_timer_callback, 0);
+	hrtimer_init(&ithc->activity_start_timer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS);
+	ithc->activity_start_timer.function = ithc_activity_start_timer_callback;
+	hrtimer_init(&ithc->activity_end_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	ithc->activity_end_timer.function = ithc_activity_end_timer_callback;
 
 	// Add ithc_stop() callback AFTER setting up DMA buffers, so that polling/irqs/DMA are
 	// disabled BEFORE the buffers are freed.
 	CHECK_RET(devm_add_action_or_reset, &pci->dev, ithc_stop, ithc);
+
+	CHECK_RET(ithc_hid_init, ithc);
 
 	// Start polling/IRQ.
 	if (ithc_use_polling) {

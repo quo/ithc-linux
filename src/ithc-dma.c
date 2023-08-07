@@ -204,7 +204,7 @@ void ithc_dma_rx_enable(struct ithc *ithc, u8 channel)
 {
 	bitsb_set(&ithc->regs->dma_rx[channel].control,
 		DMA_RX_CONTROL_ENABLE | DMA_RX_CONTROL_IRQ_ERROR | DMA_RX_CONTROL_IRQ_DATA);
-	CHECK(waitl, ithc, &ithc->regs->dma_rx[1].status,
+	CHECK(waitl, ithc, &ithc->regs->dma_rx[channel].status,
 		DMA_RX_STATUS_ENABLED, DMA_RX_STATUS_ENABLED);
 }
 
@@ -237,7 +237,6 @@ static int ithc_dma_rx_process_buf(struct ithc *ithc, struct ithc_dma_data_buffe
 		pci_err(ithc->pci, "invalid dma ringbuffer index\n");
 		return -EINVAL;
 	}
-	ithc_set_active(ithc);
 	u32 len = data->data_size;
 	struct ithc_dma_rx_header *hdr = data->addr;
 	u8 *hiddata = (void *)(hdr + 1);
@@ -334,6 +333,8 @@ int ithc_dma_rx(struct ithc *ithc, u8 channel)
 
 static int ithc_dma_tx_unlocked(struct ithc *ithc, u32 cmdcode, u32 datasize, void *data)
 {
+	ithc_set_active(ithc, 100 * USEC_PER_MSEC);
+
 	// Send a single TX buffer to the THC.
 	pci_dbg(ithc->pci, "dma tx command %u, size %u\n", cmdcode, datasize);
 	struct ithc_dma_tx_header *hdr;
