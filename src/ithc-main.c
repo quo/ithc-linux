@@ -147,11 +147,17 @@ static int ithc_hid_parse(struct hid_device *hdev)
 	struct ithc *ithc = hdev->driver_data;
 	u64 val = 0;
 	WRITE_ONCE(ithc->hid_parse_done, false);
-	CHECK_RET(ithc_dma_tx, ithc, DMA_TX_CODE_GET_REPORT_DESCRIPTOR, sizeof(val), &val);
-	if (!wait_event_timeout(ithc->wait_hid_parse, READ_ONCE(ithc->hid_parse_done),
-			msecs_to_jiffies(1000)))
-		return -ETIMEDOUT;
-	return 0;
+	for (int retries = 0; ; retries++) {
+		CHECK_RET(ithc_dma_tx, ithc, DMA_TX_CODE_GET_REPORT_DESCRIPTOR, sizeof(val), &val);
+		if (wait_event_timeout(ithc->wait_hid_parse, READ_ONCE(ithc->hid_parse_done),
+				msecs_to_jiffies(200)))
+			return 0;
+		if (retries > 5) {
+			pci_err(ithc->pci, "failed to read report descriptor\n");
+			return -ETIMEDOUT;
+		}
+		pci_warn(ithc->pci, "failed to read report descriptor, retrying\n");
+	}
 }
 
 static int ithc_hid_raw_request(struct hid_device *hdev, unsigned char reportnum, __u8 *buf,
@@ -451,10 +457,10 @@ static int ithc_init_device(struct ithc *ithc)
 		if (!waitl(ithc, &ithc->regs->state, 0xf, 2))
 			break;
 		if (retries > 5) {
-			pci_err(ithc->pci, "too many retries, failed to reset device\n");
+			pci_err(ithc->pci, "failed to reset device, state = 0x%08x\n", readl(&ithc->regs->state));
 			return -ETIMEDOUT;
 		}
-		pci_err(ithc->pci, "invalid state, retrying reset\n");
+		pci_warn(ithc->pci, "invalid state, retrying reset\n");
 		bitsl(&ithc->regs->control_bits, CONTROL_NRESET, 0);
 		if (msleep_interruptible(1000))
 			return -EINTR;
@@ -480,7 +486,7 @@ static int ithc_init_device(struct ithc *ithc)
 				ithc->config.device_id);
 			return -EIO;
 		}
-		pci_err(ithc->pci, "failed to read config, retrying\n");
+		pci_warn(ithc->pci, "failed to read config, retrying\n");
 		if (msleep_interruptible(100))
 			return -EINTR;
 	}
