@@ -246,17 +246,10 @@ static int ithc_dma_rx_process_buf(struct ithc *ithc, struct ithc_dma_data_buffe
 		// in a bad state.
 		CHECK(ithc_reset, ithc);
 	} else if (len < sizeof(*hdr) || len != sizeof(*hdr) + hdr->data_size) {
-		if (hdr->code == DMA_RX_CODE_INPUT_REPORT) {
-			// When the CPU enters a low power state during DMA, we can get truncated
-			// messages. For Surface devices, this will typically be a single touch
-			// report that is only 1 byte, or a multitouch report that is 257 bytes.
-			// See also ithc_set_active().
-		} else {
-			pci_err(ithc->pci, "invalid dma rx data! channel %u, buffer %u, size %u, code %u, data size %u\n",
-				channel, buf, len, hdr->code, hdr->data_size);
-			print_hex_dump_debug(DEVNAME " data: ", DUMP_PREFIX_OFFSET, 32, 1,
-				hdr, min(len, 0x400u), 0);
-		}
+		pci_err(ithc->pci, "invalid dma rx data! channel %u, buffer %u, size %u, code %u, data size %u\n",
+			channel, buf, len, hdr->code, hdr->data_size);
+		print_hex_dump_debug(DEVNAME " data: ", DUMP_PREFIX_OFFSET, 32, 1,
+			hdr, min(len, 0x400u), 0);
 	} else if (hdr->code == DMA_RX_CODE_REPORT_DESCRIPTOR && hdr->data_size > 8) {
 		// Response to a 'get report descriptor' request.
 		// The actual descriptor is preceded by 8 nul bytes.
@@ -265,7 +258,10 @@ static int ithc_dma_rx_process_buf(struct ithc *ithc, struct ithc_dma_data_buffe
 		wake_up(&ithc->wait_hid_parse);
 	} else if (hdr->code == DMA_RX_CODE_INPUT_REPORT) {
 		// Standard HID input report containing touch data.
-		CHECK(hid_input_report, ithc->hid, HID_INPUT_REPORT, hiddata, hdr->data_size, 1);
+		int r = hid_input_report(ithc->hid, HID_INPUT_REPORT, hiddata, hdr->data_size, 1);
+		if (r < 0)
+			pci_warn(ithc->pci, "hid_input_report failed with %i (size %u, report ID 0x%02x)\n",
+				r, hdr->data_size, hiddata[0]);
 	} else if (hdr->code == DMA_RX_CODE_FEATURE_REPORT) {
 		// Response to a 'get feature' request.
 		bool done = false;
@@ -333,8 +329,6 @@ int ithc_dma_rx(struct ithc *ithc, u8 channel)
 
 static int ithc_dma_tx_unlocked(struct ithc *ithc, u32 cmdcode, u32 datasize, void *data)
 {
-	ithc_set_active(ithc, 100 * USEC_PER_MSEC);
-
 	// Send a single TX buffer to the THC.
 	pci_dbg(ithc->pci, "dma tx command %u, size %u\n", cmdcode, datasize);
 	struct ithc_dma_tx_header *hdr;

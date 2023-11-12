@@ -48,6 +48,35 @@ int waitb(struct ithc *ithc, __iomem u8 *reg, u8 mask, u8 val)
 	return 0;
 }
 
+static void calc_ltr(unsigned int *ns, unsigned int *val, unsigned int *scale) {
+	unsigned int s = 0, v = *ns;
+	while (v > 0x3ff) {
+		s++;
+		v >>= 5;
+	}
+	if (s > 5) {
+		s = 5;
+		v = 0x3ff;
+	}
+	*val = v;
+	*scale = s;
+	*ns = v << (5 * s);
+}
+
+void ithc_set_ltr_config(struct ithc *ithc, unsigned int active_ltr_ns, unsigned int idle_ltr_ns)
+{
+	unsigned int active_val, active_scale, idle_val, idle_scale;
+	calc_ltr(&active_ltr_ns, &active_val, &active_scale);
+	calc_ltr(&idle_ltr_ns, &idle_val, &idle_scale);
+	pci_dbg(ithc->pci, "setting active LTR value to %u ns, idle LTR value to %u ns\n",
+		active_ltr_ns, idle_ltr_ns);
+	writel(LTR_CONFIG_UNKNOWN_0 | LTR_CONFIG_UNKNOWN_1 | LTR_CONFIG_UNKNOWN_2 |
+		//LTR_CONFIG_UNKNOWN_3 | // TODO only used when changing value while device is active?
+		LTR_CONFIG_ACTIVE_LTR_SCALE(active_scale)| LTR_CONFIG_ACTIVE_LTR_VALUE(active_val) |
+		LTR_CONFIG_IDLE_LTR_SCALE(idle_scale) | LTR_CONFIG_IDLE_LTR_VALUE(idle_val),
+		&ithc->regs->ltr_config);
+}
+
 int ithc_set_spi_config(struct ithc *ithc, u8 clkdiv, bool clkdiv8, u8 read_mode, u8 write_mode)
 {
 	if (clkdiv == 0 || clkdiv > 7 || read_mode > SPI_MODE_QUAD || write_mode > SPI_MODE_QUAD)
