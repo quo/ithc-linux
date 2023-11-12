@@ -5,10 +5,16 @@
 #define CONTROL_NRESET                      BIT(3)
 #define CONTROL_READY                       BIT(29)
 
-#define SPI_CONFIG_MODE(x)                  (((x) & 3) << 2)
-#define SPI_CONFIG_SPEED(x)                 (((x) & 7) << 4)
-#define SPI_CONFIG_UNKNOWN_18(x)            (((x) & 3) << 18)
-#define SPI_CONFIG_SPEED2(x)                (((x) & 0xf) << 20) // high bit = high speed mode?
+#define SPI_CONFIG_READ_MODE(x)             (((x) & 3) << 2)
+#define SPI_CONFIG_READ_CLKDIV(x)           (((x) & 7) << 4)
+#define SPI_CONFIG_WRITE_MODE(x)            (((x) & 3) << 18)
+#define SPI_CONFIG_WRITE_CLKDIV(x)          (((x) & 7) << 20)
+#define SPI_CONFIG_CLKDIV_8                 BIT(23) // additionally divide clk by 8, for both read and write
+
+#define SPI_CLK_FREQ_BASE                   125000000
+#define SPI_MODE_SINGLE                     0
+#define SPI_MODE_DUAL                       1
+#define SPI_MODE_QUAD                       2
 
 #define ERROR_CONTROL_UNKNOWN_0             BIT(0)
 #define ERROR_CONTROL_DISABLE_DMA           BIT(1) // clears DMA_RX_CONTROL_ENABLE when a DMA error occurs
@@ -56,7 +62,7 @@
 #define DMA_RX_CONTROL_ENABLE               BIT(0)
 #define DMA_RX_CONTROL_IRQ_UNKNOWN_1        BIT(1) // rx1 only?
 #define DMA_RX_CONTROL_IRQ_ERROR            BIT(3) // rx1 only?
-#define DMA_RX_CONTROL_IRQ_UNKNOWN_4        BIT(4) // rx0 only?
+#define DMA_RX_CONTROL_IRQ_READY            BIT(4) // rx0 only
 #define DMA_RX_CONTROL_IRQ_DATA             BIT(5)
 
 #define DMA_RX_CONTROL2_UNKNOWN_5           BIT(5) // rx0 only?
@@ -65,7 +71,7 @@
 #define DMA_RX_WRAP_FLAG                    BIT(7)
 
 #define DMA_RX_STATUS_ERROR                 BIT(3)
-#define DMA_RX_STATUS_UNKNOWN_4             BIT(4) // set in rx0 after using CONTROL_NRESET when it becomes possible to read config (can take >100ms)
+#define DMA_RX_STATUS_READY                 BIT(4) // set in rx0 after using CONTROL_NRESET when it becomes possible to read config (can take >100ms)
 #define DMA_RX_STATUS_HAVE_DATA             BIT(5)
 #define DMA_RX_STATUS_ENABLED               BIT(8)
 
@@ -102,7 +108,7 @@ struct ithc_registers {
 		/* 109c */ u32 status; // write to clear
 	} dma_tx;
 	/* 10a0 */ u32 _unknown_10a0[7];
-	/* 10bc */ u32 state; // is 0xe0000402 (dev config val 0) after CONTROL_NRESET, 0xe0000461 after first touch, 0xe0000401 after DMA_RX_CODE_RESET
+	/* 10bc */ u32 irq_cause;
 	/* 10c0 */ u32 _unknown_10c0[8];
 	/* 10e0 */ u32 _unknown_10e0_counters[3];
 	/* 10ec */ u32 _unknown_10ec[5];
@@ -138,18 +144,20 @@ static_assert(sizeof(struct ithc_registers) == 0x1300);
 
 #define DEVCFG_TOUCH_MASK              0x3f
 #define DEVCFG_TOUCH_ENABLE            BIT(0)
-#define DEVCFG_TOUCH_UNKNOWN_1         BIT(1)
-#define DEVCFG_TOUCH_UNKNOWN_2         BIT(2)
-#define DEVCFG_TOUCH_UNKNOWN_3         BIT(3)
-#define DEVCFG_TOUCH_UNKNOWN_4         BIT(4)
-#define DEVCFG_TOUCH_UNKNOWN_5         BIT(5)
+#define DEVCFG_TOUCH_PROP_DATA_ENABLE  BIT(1)
+#define DEVCFG_TOUCH_HID_REPORT_ENABLE BIT(2)
+#define DEVCFG_TOUCH_POWER_STATE(x)    (((x) & 7) << 3)
 #define DEVCFG_TOUCH_UNKNOWN_6         BIT(6)
 
 #define DEVCFG_DEVICE_ID_TIC           0x43495424 // "$TIC"
 
-#define DEVCFG_SPI_MAX_FREQ(x)         (((x) >> 1) & 0xf) // high bit = use high speed mode?
-#define DEVCFG_SPI_MODE(x)             (((x) >> 6) & 3)
-#define DEVCFG_SPI_UNKNOWN_8(x)        (((x) >> 8) & 0x3f)
+#define DEVCFG_SPI_CLKDIV(x)           (((x) >> 1) & 7)
+#define DEVCFG_SPI_CLKDIV_8            BIT(4)
+#define DEVCFG_SPI_SUPPORTS_SINGLE     BIT(5)
+#define DEVCFG_SPI_SUPPORTS_DUAL       BIT(6)
+#define DEVCFG_SPI_SUPPORTS_QUAD       BIT(7)
+#define DEVCFG_SPI_MAX_TOUCH_POINTS(x) (((x) >> 8) & 0x3f)
+#define DEVCFG_SPI_MIN_RESET_TIME(x)   (((x) >> 16) & 0xf)
 #define DEVCFG_SPI_NEEDS_HEARTBEAT     BIT(20) // TODO implement heartbeat
 #define DEVCFG_SPI_HEARTBEAT_INTERVAL(x) (((x) >> 21) & 7)
 #define DEVCFG_SPI_UNKNOWN_25          BIT(25)
@@ -159,21 +167,24 @@ static_assert(sizeof(struct ithc_registers) == 0x1300);
 #define DEVCFG_SPI_USE_EXT_READ_CFG    BIT(31) // TODO use this?
 
 struct ithc_device_config { // (Example values are from an SP7+.)
-	u32 _unknown_00;      // 00 = 0xe0000402 (0xe0000401 after DMA_RX_CODE_RESET)
-	u32 _unknown_04;      // 04 = 0x00000000
+	u32 irq_cause;        // 00 = 0xe0000402 (0xe0000401 after DMA_RX_CODE_RESET)
+	u32 error;            // 04 = 0x00000000
 	u32 dma_buf_sizes;    // 08 = 0x000a00ff
 	u32 touch_cfg;        // 0c = 0x0000001c
-	u32 _unknown_10;      // 10 = 0x0000001c
+	u32 touch_state;      // 10 = 0x0000001c
 	u32 device_id;        // 14 = 0x43495424 = "$TIC"
 	u32 spi_config;       // 18 = 0xfda00a2e
 	u16 vendor_id;        // 1c = 0x045e = Microsoft Corp.
 	u16 product_id;       // 1e = 0x0c1a
 	u32 revision;         // 20 = 0x00000001
 	u32 fw_version;       // 24 = 0x05008a8b = 5.0.138.139 (this value looks more random on newer devices)
-	u32 _unknown_28;      // 28 = 0x00000000
+	u32 command;          // 28 = 0x00000000
 	u32 fw_mode;          // 2c = 0x00000000 (for fw update?)
 	u32 _unknown_30;      // 30 = 0x00000000
-	u32 _unknown_34;      // 34 = 0x0404035e (u8,u8,u8,u8 = version?)
+	u8 eds_minor_ver;     // 34 = 0x5e
+	u8 eds_major_ver;     // 35 = 0x03
+	u8 interface_rev;     // 36 = 0x04
+	u8 eu_kernel_ver;     // 37 = 0x04
 	u32 _unknown_38;      // 38 = 0x000001c0 (0x000001c1 after DMA_RX_CODE_RESET)
 	u32 _unknown_3c;      // 3c = 0x00000002
 };
@@ -184,6 +195,6 @@ void bitsb(__iomem u8 *reg, u8 mask, u8 val);
 #define bitsb_set(reg, x) bitsb(reg, x, x)
 int waitl(struct ithc *ithc, __iomem u32 *reg, u32 mask, u32 val);
 int waitb(struct ithc *ithc, __iomem u8 *reg, u8 mask, u8 val);
-int ithc_set_spi_config(struct ithc *ithc, u8 speed, u8 mode);
+int ithc_set_spi_config(struct ithc *ithc, u8 clkdiv, bool clkdiv8, u8 read_mode, u8 write_mode);
 int ithc_spi_command(struct ithc *ithc, u8 command, u32 offset, u32 size, void *data);
 

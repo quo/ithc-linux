@@ -289,8 +289,8 @@ void ithc_set_active(struct ithc *ithc, unsigned int duration_us)
 static int ithc_set_device_enabled(struct ithc *ithc, bool enable)
 {
 	u32 x = ithc->config.touch_cfg =
-		(ithc->config.touch_cfg & ~(u32)DEVCFG_TOUCH_MASK) | DEVCFG_TOUCH_UNKNOWN_2 |
-		(enable ? DEVCFG_TOUCH_ENABLE | DEVCFG_TOUCH_UNKNOWN_3 | DEVCFG_TOUCH_UNKNOWN_4 : 0);
+		(ithc->config.touch_cfg & ~(u32)DEVCFG_TOUCH_MASK) | DEVCFG_TOUCH_HID_REPORT_ENABLE |
+		(enable ? DEVCFG_TOUCH_ENABLE | DEVCFG_TOUCH_POWER_STATE(3) : 0);
 	return ithc_spi_command(ithc, SPI_CMD_CODE_WRITE,
 		offsetof(struct ithc_device_config, touch_cfg), sizeof(x), &x);
 }
@@ -299,14 +299,14 @@ static void ithc_disable_interrupts(struct ithc *ithc)
 {
 	writel(0, &ithc->regs->error_control);
 	bitsb(&ithc->regs->spi_cmd.control, SPI_CMD_CONTROL_IRQ, 0);
-	bitsb(&ithc->regs->dma_rx[0].control, DMA_RX_CONTROL_IRQ_UNKNOWN_1 | DMA_RX_CONTROL_IRQ_ERROR | DMA_RX_CONTROL_IRQ_UNKNOWN_4 | DMA_RX_CONTROL_IRQ_DATA, 0);
-	bitsb(&ithc->regs->dma_rx[1].control, DMA_RX_CONTROL_IRQ_UNKNOWN_1 | DMA_RX_CONTROL_IRQ_ERROR | DMA_RX_CONTROL_IRQ_UNKNOWN_4 | DMA_RX_CONTROL_IRQ_DATA, 0);
+	bitsb(&ithc->regs->dma_rx[0].control, DMA_RX_CONTROL_IRQ_UNKNOWN_1 | DMA_RX_CONTROL_IRQ_ERROR | DMA_RX_CONTROL_IRQ_READY | DMA_RX_CONTROL_IRQ_DATA, 0);
+	bitsb(&ithc->regs->dma_rx[1].control, DMA_RX_CONTROL_IRQ_UNKNOWN_1 | DMA_RX_CONTROL_IRQ_ERROR | DMA_RX_CONTROL_IRQ_READY | DMA_RX_CONTROL_IRQ_DATA, 0);
 	bitsb(&ithc->regs->dma_tx.control, DMA_TX_CONTROL_IRQ, 0);
 }
 
 static void ithc_clear_dma_rx_interrupts(struct ithc *ithc, unsigned int channel)
 {
-	writel(DMA_RX_STATUS_ERROR | DMA_RX_STATUS_UNKNOWN_4 | DMA_RX_STATUS_HAVE_DATA,
+	writel(DMA_RX_STATUS_ERROR | DMA_RX_STATUS_READY | DMA_RX_STATUS_HAVE_DATA,
 		&ithc->regs->dma_rx[channel].status);
 }
 
@@ -438,7 +438,7 @@ static int ithc_init_device(struct ithc *ithc)
 
 	// Since we don't yet know which SPI config the device wants, use default speed and mode
 	// initially for reading config data.
-	ithc_set_spi_config(ithc, 10, 0);
+	CHECK(ithc_set_spi_config, ithc, 2, true, SPI_MODE_SINGLE, SPI_MODE_SINGLE);
 
 	// Setting the following bit seems to make reading the config more reliable.
 	bitsl_set(&ithc->regs->dma_rx[0].unknown_init_bits, 0x80000000);
@@ -454,22 +454,20 @@ static int ithc_init_device(struct ithc *ithc)
 	for (int retries = 0; ; retries++) {
 		ithc_log_regs(ithc);
 		bitsl_set(&ithc->regs->control_bits, CONTROL_NRESET);
-		if (!waitl(ithc, &ithc->regs->state, 0xf, 2))
+		if (!waitl(ithc, &ithc->regs->irq_cause, 0xf, 2))
 			break;
 		if (retries > 5) {
-			pci_err(ithc->pci, "failed to reset device, state = 0x%08x\n", readl(&ithc->regs->state));
+			pci_err(ithc->pci, "failed to reset device, irq_cause = 0x%08x\n", readl(&ithc->regs->irq_cause));
 			return -ETIMEDOUT;
 		}
-		pci_warn(ithc->pci, "invalid state, retrying reset\n");
+		pci_warn(ithc->pci, "invalid irq_cause, retrying reset\n");
 		bitsl(&ithc->regs->control_bits, CONTROL_NRESET, 0);
 		if (msleep_interruptible(1000))
 			return -EINTR;
 	}
 	ithc_log_regs(ithc);
 
-	// Waiting for the following status bit makes reading config much more reliable,
-	// however the official driver does not seem to do this...
-	CHECK(waitl, ithc, &ithc->regs->dma_rx[0].status, DMA_RX_STATUS_UNKNOWN_4, DMA_RX_STATUS_UNKNOWN_4);
+	CHECK(waitl, ithc, &ithc->regs->dma_rx[0].status, DMA_RX_STATUS_READY, DMA_RX_STATUS_READY);
 
 	// Read configuration data.
 	for (int retries = 0; ; retries++) {
@@ -493,9 +491,13 @@ static int ithc_init_device(struct ithc *ithc)
 	ithc_log_regs(ithc);
 
 	// Apply SPI config and enable touch device.
+	u32 cfg = ithc->config.spi_config;
 	CHECK_RET(ithc_set_spi_config, ithc,
-		DEVCFG_SPI_MAX_FREQ(ithc->config.spi_config),
-		DEVCFG_SPI_MODE(ithc->config.spi_config));
+		DEVCFG_SPI_CLKDIV(cfg), (cfg & DEVCFG_SPI_CLKDIV_8) != 0,
+		cfg & DEVCFG_SPI_SUPPORTS_QUAD ? SPI_MODE_QUAD :
+		cfg & DEVCFG_SPI_SUPPORTS_DUAL ? SPI_MODE_DUAL :
+		SPI_MODE_SINGLE,
+		SPI_MODE_SINGLE);
 	CHECK_RET(ithc_set_device_enabled, ithc, true);
 	ithc_log_regs(ithc);
 	return 0;

@@ -48,14 +48,21 @@ int waitb(struct ithc *ithc, __iomem u8 *reg, u8 mask, u8 val)
 	return 0;
 }
 
-int ithc_set_spi_config(struct ithc *ithc, u8 speed, u8 mode)
+int ithc_set_spi_config(struct ithc *ithc, u8 clkdiv, bool clkdiv8, u8 read_mode, u8 write_mode)
 {
-	pci_dbg(ithc->pci, "setting SPI speed to %i, mode %i\n", speed, mode);
-	if (mode == 3)
-		mode = 2;
+	if (clkdiv == 0 || clkdiv > 7 || read_mode > SPI_MODE_QUAD || write_mode > SPI_MODE_QUAD)
+		return -EINVAL;
+	const char* modes[] = { "single", "dual", "quad" };
+	pci_dbg(ithc->pci, "setting SPI frequency to %i Hz, %s read, %s write\n",
+		SPI_CLK_FREQ_BASE / (clkdiv * (clkdiv8 ? 8 : 1)),
+		modes[read_mode], modes[write_mode]);
 	bitsl(&ithc->regs->spi_config,
-		SPI_CONFIG_MODE(0xff) | SPI_CONFIG_SPEED(0xff) | SPI_CONFIG_UNKNOWN_18(0xff) | SPI_CONFIG_SPEED2(0xff),
-		SPI_CONFIG_MODE(mode) | SPI_CONFIG_SPEED(speed) | SPI_CONFIG_UNKNOWN_18(0) | SPI_CONFIG_SPEED2(speed));
+		SPI_CONFIG_READ_MODE(0xff) | SPI_CONFIG_READ_CLKDIV(0xff) |
+		SPI_CONFIG_WRITE_MODE(0xff) | SPI_CONFIG_WRITE_CLKDIV(0xff) |
+		SPI_CONFIG_CLKDIV_8,
+		SPI_CONFIG_READ_MODE(read_mode) | SPI_CONFIG_READ_CLKDIV(clkdiv) |
+		SPI_CONFIG_WRITE_MODE(write_mode) | SPI_CONFIG_WRITE_CLKDIV(clkdiv) |
+		(clkdiv8 ? SPI_CONFIG_CLKDIV_8 : 0));
 	return 0;
 }
 
