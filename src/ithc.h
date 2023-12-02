@@ -1,17 +1,18 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-2-Clause */
 
-#include <linux/module.h>
-#include <linux/input.h>
-#include <linux/hid.h>
+#include <linux/acpi.h>
+#include <linux/debugfs.h>
+#include <linux/delay.h>
 #include <linux/dma-mapping.h>
+#include <linux/hid.h>
 #include <linux/highmem.h>
-#include <linux/pci.h>
+#include <linux/input.h>
 #include <linux/io-64-nonatomic-lo-hi.h>
 #include <linux/iopoll.h>
-#include <linux/delay.h>
 #include <linux/kthread.h>
 #include <linux/miscdevice.h>
-#include <linux/debugfs.h>
+#include <linux/module.h>
+#include <linux/pci.h>
 #include <linux/poll.h>
 
 #define DEVNAME "ithc"
@@ -28,7 +29,10 @@
 struct ithc;
 
 #include "ithc-regs.h"
+#include "ithc-hid.h"
 #include "ithc-dma.h"
+#include "ithc-legacy.h"
+#include "ithc-quickspi.h"
 
 struct ithc {
 	char phys[32];
@@ -36,23 +40,23 @@ struct ithc {
 	int irq;
 	struct task_struct *poll_thread;
 
-	struct hid_device *hid;
-	bool hid_parse_done;
-	wait_queue_head_t wait_hid_parse;
-	wait_queue_head_t wait_hid_get_feature;
-	struct mutex hid_get_feature_mutex;
-	void *hid_get_feature_buf;
-	size_t hid_get_feature_size;
-
 	struct ithc_registers __iomem *regs;
 	struct ithc_registers *prev_regs; // for debugging
-	struct ithc_device_config config;
 	struct ithc_dma_rx dma_rx[2];
 	struct ithc_dma_tx dma_tx;
+	struct ithc_hid hid;
+
+	bool use_quickspi;
+	bool have_config;
+	u16 vendor_id;
+	u16 product_id;
+	u32 product_rev;
+	u32 max_rx_size;
+	u32 max_tx_size;
+	u32 legacy_touch_cfg;
 };
 
 int ithc_reset(struct ithc *ithc);
-void ithc_set_active(struct ithc *ithc, unsigned int duration_us);
 int ithc_debug_init(struct ithc *ithc);
 void ithc_log_regs(struct ithc *ithc);
 
