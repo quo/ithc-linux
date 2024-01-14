@@ -12,7 +12,7 @@
 #define CONTROL_QUIESCE                     BIT(1)
 #define CONTROL_IS_QUIESCED                 BIT(2)
 #define CONTROL_NRESET                      BIT(3)
-#define CONTROL_UNKNOWN_24                  (((x) & 3) << 24)
+#define CONTROL_UNKNOWN_24(x)               (((x) & 3) << 24)
 #define CONTROL_READY                       BIT(29)
 
 #define SPI_CONFIG_READ_MODE(x)             (((x) & 3) << 2)

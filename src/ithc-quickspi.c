@@ -185,7 +185,9 @@ int ithc_read_acpi_config(struct ithc *ithc, struct ithc_acpi_config *cfg)
 		return r;
 	cfg->has_active_ltr = r > 0;
 	if (r > 0 && (!cfg->active_ltr || cfg->active_ltr > 0x3ff)) {
-		pci_warn(ithc->pci, "Ignoring invalid active LTR value 0x%x\n", cfg->active_ltr);
+		if (cfg->active_ltr != 0xffffffff)
+			pci_warn(ithc->pci, "Ignoring invalid active LTR value 0x%x\n",
+				cfg->active_ltr);
 		cfg->active_ltr = 500;
 	}
 
@@ -194,8 +196,12 @@ int ithc_read_acpi_config(struct ithc *ithc, struct ithc_acpi_config *cfg)
 		return r;
 	cfg->has_idle_ltr = r > 0;
 	if (r > 0 && (!cfg->idle_ltr || cfg->idle_ltr > 0x3ff)) {
-		pci_warn(ithc->pci, "Ignoring invalid idle LTR value 0x%x\n", cfg->idle_ltr);
+		if (cfg->idle_ltr != 0xffffffff)
+			pci_warn(ithc->pci, "Ignoring invalid idle LTR value 0x%x\n",
+				cfg->idle_ltr);
 		cfg->idle_ltr = 500;
+		if (cfg->has_active_ltr && cfg->active_ltr > cfg->idle_ltr)
+			cfg->idle_ltr = cfg->active_ltr;
 	}
 
 	return 0;
@@ -245,7 +251,7 @@ void ithc_print_acpi_config(struct ithc *ithc, const struct ithc_acpi_config *cf
 	if (cfg->has_idle_ltr)
 		sprintf(idle_ltr, "%u", cfg->idle_ltr);
 
-	pci_info(ithc->pci, "ACPI config: InputHeaderAddr=%s InputBodyAddr=%s  OutputBodyAddr=%s ReadOpcode=%s WriteOpcode=%s ReadMode=%s WriteMode=%s Frequency=%s LimitPacketSize=%s TxDelay=%s ActiveLTR=%s IdleLTR=%s\n",
+	pci_info(ithc->pci, "ACPI config: InputHeaderAddr=%s InputBodyAddr=%s OutputBodyAddr=%s ReadOpcode=%s WriteOpcode=%s ReadMode=%s WriteMode=%s Frequency=%s LimitPacketSize=%s TxDelay=%s ActiveLTR=%s IdleLTR=%s\n",
 		input_report_header_address, input_report_body_address, output_report_body_address,
 		read_opcode, write_opcode, read_mode, write_mode,
 		spi_frequency, limit_packet_size, tx_delay, active_ltr, idle_ltr);
@@ -254,9 +260,6 @@ void ithc_print_acpi_config(struct ithc *ithc, const struct ithc_acpi_config *cf
 static int ithc_quickspi_init_regs(struct ithc *ithc, const struct ithc_acpi_config *cfg)
 {
 	pci_dbg(ithc->pci, "initializing QuickSPI registers\n");
-
-	// XXX NRESET not used for QuickSPI?
-	//bitsl_set(&ithc->regs->control_bits, CONTROL_NRESET);
 
 	// SPI frequency and mode
 	if (!cfg->has_spi_frequency || !cfg->spi_frequency) {
@@ -287,7 +290,6 @@ static int ithc_quickspi_init_regs(struct ithc *ithc, const struct ithc_acpi_con
 		writeb(cfg->read_opcode, &ithc->regs->read_opcode_dual);
 		writeb(cfg->read_opcode, &ithc->regs->read_opcode_quad);
 	}
-
 	if (cfg->has_write_opcode) {
 		writeb(cfg->write_opcode, &ithc->regs->write_opcode);
 		writeb(cfg->write_opcode, &ithc->regs->write_opcode_single);
@@ -320,6 +322,7 @@ static int ithc_quickspi_init_regs(struct ithc *ithc, const struct ithc_acpi_con
 		QUICKSPI_CONFIG2_DISABLE_READ_ADDRESS_INCREMENT |
 		QUICKSPI_CONFIG2_DISABLE_WRITE_ADDRESS_INCREMENT |
 		QUICKSPI_CONFIG2_ENABLE_WRITE_STREAMING_MODE, 0);
+
 	return 0;
 }
 
@@ -350,13 +353,6 @@ static int ithc_quickspi_init_hidspi(struct ithc *ithc, const struct ithc_acpi_c
 		pci_err(ithc->pci, "ACPI reset failed\n");
 		return -EIO;
 	}
-
-	// TODO Do we need to set any of the following bits here?
-	//bitsb_set(&ithc->regs->dma_rx[1].control2, DMA_RX_CONTROL2_UNKNOWN_4);
-	//bitsl(&ithc->regs->quickspi_config1, QUICKSPI_CONFIG1_16(0xffff), QUICKSPI_CONFIG1_16(1));
-	//bitsb_set(&ithc->regs->dma_rx[0].control2, DMA_RX_CONTROL2_UNKNOWN_5);
-	//bitsb_set(&ithc->regs->dma_rx[1].control2, DMA_RX_CONTROL2_UNKNOWN_5);
-	//bitsl_set(&ithc->regs->dma_rx[0].init_unknown, INIT_UNKNOWN_3);
 
 	bitsl(&ithc->regs->control_bits, CONTROL_QUIESCE, 0);
 
@@ -427,7 +423,7 @@ static int ithc_quickspi_init_hidspi(struct ithc *ithc, const struct ithc_acpi_c
 	}
 	if (d->wDeviceDescLength != sizeof(*d)) {
 		pci_err(ithc->pci, "invalid device descriptor length (%u)\n",
-			resp.device_desc.wDeviceDescLength);
+			d->wDeviceDescLength);
 		return -EMSGSIZE;
 	}
 
@@ -440,11 +436,12 @@ static int ithc_quickspi_init_hidspi(struct ithc *ithc, const struct ithc_acpi_c
 	ithc->vendor_id = d->wVendorID;
 	ithc->product_id = d->wProductID;
 	ithc->product_rev = d->wVersionID;
-	ithc->max_rx_size = d->wMaxInputLength;
+	ithc->max_rx_size = max_t(u32, d->wMaxInputLength,
+		d->wReportDescLength + sizeof(struct hidspi_header));
 	ithc->max_tx_size = d->wMaxOutputLength;
 	ithc->have_config = true;
 
-	// "7. The device and host shall then enter their “Ready” states - where the device may
+	// "7. The device and host shall then enter their "Ready" states - where the device may
 	// begin sending Input Reports, and the device shall be prepared for Output Reports from
 	// the host."
 
@@ -460,6 +457,18 @@ int ithc_quickspi_init(struct ithc *ithc, const struct ithc_acpi_config *cfg)
 	CHECK_RET(ithc_quickspi_init_regs, ithc, cfg);
 	ithc_log_regs(ithc);
 	CHECK_RET(ithc_quickspi_init_hidspi, ithc, cfg);
+	ithc_log_regs(ithc);
+
+	bitsl(&ithc->regs->quickspi_config1,
+		QUICKSPI_CONFIG1_UNKNOWN_16(0xffff), QUICKSPI_CONFIG1_UNKNOWN_16(1));
+
+	// TODO Do we need to set any of the following bits here?
+	//bitsb_set(&ithc->regs->dma_rx[1].control2, DMA_RX_CONTROL2_UNKNOWN_4);
+	//bitsb_set(&ithc->regs->dma_rx[0].control2, DMA_RX_CONTROL2_UNKNOWN_5);
+	//bitsb_set(&ithc->regs->dma_rx[1].control2, DMA_RX_CONTROL2_UNKNOWN_5);
+	//bitsl_set(&ithc->regs->dma_rx[0].init_unknown, INIT_UNKNOWN_3);
+	//bitsl_set(&ithc->regs->dma_rx[0].init_unknown, INIT_UNKNOWN_31);
+
 	ithc_log_regs(ithc);
 
 	return 0;

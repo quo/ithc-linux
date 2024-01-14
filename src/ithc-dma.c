@@ -256,8 +256,9 @@ static int ithc_dma_rx_unlocked(struct ithc *ithc, u8 channel)
 				channel, tail, b->data_size, min((int)b->data_size, 64), b->addr);
 			print_hex_dump_debug(DEVNAME " data: ", DUMP_PREFIX_OFFSET, 32, 1,
 				b->addr, min(b->data_size, 0x400u), 0);
+		} else {
+			ithc_hid_process_data(ithc, &d);
 		}
-		ithc_hid_process_data(ithc, &d);
 
 		// give the buffer back to the device
 		CHECK_RET(ithc_dma_data_buffer_put, ithc, &rx->prds, b, tail);

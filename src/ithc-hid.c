@@ -13,11 +13,15 @@ static int ithc_hid_parse(struct hid_device *hdev)
 	const struct ithc_data get_report_desc = { .type = ITHC_DATA_REPORT_DESCRIPTOR };
 	WRITE_ONCE(ithc->hid.parse_done, false);
 	for (int retries = 0; ; retries++) {
+		ithc_log_regs(ithc);
 		CHECK_RET(ithc_dma_tx, ithc, &get_report_desc);
 		if (wait_event_timeout(ithc->hid.wait_parse, READ_ONCE(ithc->hid.parse_done),
-				msecs_to_jiffies(200)))
+				msecs_to_jiffies(200))) {
+			ithc_log_regs(ithc);
 			return 0;
+		}
 		if (retries > 5) {
+			ithc_log_regs(ithc);
 			pci_err(ithc->pci, "failed to read report descriptor\n");
 			return -ETIMEDOUT;
 		}

@@ -22,28 +22,34 @@ void bitsb(__iomem u8 *reg, u8 mask, u8 val)
 
 int waitl(struct ithc *ithc, __iomem u32 *reg, u32 mask, u32 val)
 {
+	ithc_log_regs(ithc);
 	pci_dbg(ithc->pci, "waiting for reg 0x%04x mask 0x%08x val 0x%08x\n",
 		reg_num(reg), mask, val);
 	u32 x;
 	if (readl_poll_timeout(reg, x, (x & mask) == val, 200, 1000*1000)) {
+		ithc_log_regs(ithc);
 		pci_err(ithc->pci, "timed out waiting for reg 0x%04x mask 0x%08x val 0x%08x\n",
 			reg_num(reg), mask, val);
 		return -ETIMEDOUT;
 	}
+	ithc_log_regs(ithc);
 	pci_dbg(ithc->pci, "done waiting\n");
 	return 0;
 }
 
 int waitb(struct ithc *ithc, __iomem u8 *reg, u8 mask, u8 val)
 {
+	ithc_log_regs(ithc);
 	pci_dbg(ithc->pci, "waiting for reg 0x%04x mask 0x%02x val 0x%02x\n",
 		reg_num(reg), mask, val);
 	u8 x;
 	if (readb_poll_timeout(reg, x, (x & mask) == val, 200, 1000*1000)) {
+		ithc_log_regs(ithc);
 		pci_err(ithc->pci, "timed out waiting for reg 0x%04x mask 0x%02x val 0x%02x\n",
 			reg_num(reg), mask, val);
 		return -ETIMEDOUT;
 	}
+	ithc_log_regs(ithc);
 	pci_dbg(ithc->pci, "done waiting\n");
 	return 0;
 }
