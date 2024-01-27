@@ -78,11 +78,25 @@ void ithc_set_ltr_config(struct ithc *ithc, u64 active_ltr_ns, u64 idle_ltr_ns)
 	calc_ltr(&idle_ltr_ns, &idle_val, &idle_scale);
 	pci_dbg(ithc->pci, "setting active LTR value to %llu ns, idle LTR value to %llu ns\n",
 		active_ltr_ns, idle_ltr_ns);
-	writel(LTR_CONFIG_UNKNOWN_0 | LTR_CONFIG_UNKNOWN_1 | LTR_CONFIG_UNKNOWN_2 |
-		//LTR_CONFIG_UNKNOWN_3 | // TODO only used when changing value while device is active?
+	writel(LTR_CONFIG_ENABLE_ACTIVE | LTR_CONFIG_ENABLE_IDLE | LTR_CONFIG_APPLY |
 		LTR_CONFIG_ACTIVE_LTR_SCALE(active_scale) | LTR_CONFIG_ACTIVE_LTR_VALUE(active_val) |
 		LTR_CONFIG_IDLE_LTR_SCALE(idle_scale) | LTR_CONFIG_IDLE_LTR_VALUE(idle_val),
 		&ithc->regs->ltr_config);
+}
+
+void ithc_set_ltr_idle(struct ithc *ithc)
+{
+	u32 ltr = readl(&ithc->regs->ltr_config);
+	switch (ltr & (LTR_CONFIG_STATUS_ACTIVE | LTR_CONFIG_STATUS_IDLE)) {
+	case LTR_CONFIG_STATUS_IDLE:
+		break;
+	case LTR_CONFIG_STATUS_ACTIVE:
+		writel(ltr | LTR_CONFIG_TOGGLE | LTR_CONFIG_APPLY, &ithc->regs->ltr_config);
+		break;
+	default:
+		pci_err(ithc->pci, "invalid LTR state 0x%08x\n", ltr);
+		break;
+	}
 }
 
 int ithc_set_spi_config(struct ithc *ithc, u8 clkdiv, bool clkdiv8, u8 read_mode, u8 write_mode)

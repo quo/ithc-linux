@@ -150,6 +150,11 @@ static void ithc_process(struct ithc *ithc)
 {
 	ithc_log_regs(ithc);
 
+	// The THC automatically transitions from LTR idle to active at the start of a DMA transfer.
+	// It does not appear to automatically go back to idle, so we switch it back here, since
+	// the DMA transfer should be complete.
+	ithc_set_ltr_idle(ithc);
+
 	bool rx0 = ithc_use_rx0 && (readl(&ithc->regs->dma_rx[0].status) & (DMA_RX_STATUS_ERROR | DMA_RX_STATUS_HAVE_DATA)) != 0;
 	bool rx1 = ithc_use_rx1 && (readl(&ithc->regs->dma_rx[1].status) & (DMA_RX_STATUS_ERROR | DMA_RX_STATUS_HAVE_DATA)) != 0;
 
@@ -160,7 +165,7 @@ static void ithc_process(struct ithc *ithc)
 		if (err & ~ERROR_FLAG_DMA_RX_TIMEOUT)
 			pci_err(ithc->pci, "error flags: 0x%08x\n", err);
 		if (err & ERROR_FLAG_DMA_RX_TIMEOUT)
-			pci_err(ithc->pci, "DMA RX timeout/error (try decreasing activeltr if this happens frequently)\n");
+			pci_err(ithc->pci, "DMA RX timeout/error (try decreasing activeltr/idleltr if this happens frequently)\n");
 	}
 
 	// Process DMA rx
@@ -396,6 +401,8 @@ static int ithc_start(struct pci_dev *pci)
 	CHECK_RET(hid_add_device, ithc->hid.dev);
 
 	CHECK(ithc_debug_init_device, ithc);
+
+	ithc_set_ltr_idle(ithc);
 
 	pci_dbg(pci, "started\n");
 	return 0;

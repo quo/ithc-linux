@@ -1,13 +1,15 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-2-Clause */
 
-#define LTR_CONFIG_UNKNOWN_0                BIT(0)
-#define LTR_CONFIG_UNKNOWN_1                BIT(1)
-#define LTR_CONFIG_UNKNOWN_2                BIT(2)
-#define LTR_CONFIG_UNKNOWN_3                BIT(3)
+#define LTR_CONFIG_ENABLE_ACTIVE            BIT(0)
+#define LTR_CONFIG_TOGGLE                   BIT(1)
+#define LTR_CONFIG_ENABLE_IDLE              BIT(2)
+#define LTR_CONFIG_APPLY                    BIT(3)
 #define LTR_CONFIG_IDLE_LTR_SCALE(x)        (((x) & 7) << 4)
 #define LTR_CONFIG_IDLE_LTR_VALUE(x)        (((x) & 0x3ff) << 7)
 #define LTR_CONFIG_ACTIVE_LTR_SCALE(x)      (((x) & 7) << 17)
 #define LTR_CONFIG_ACTIVE_LTR_VALUE(x)      (((x) & 0x3ff) << 20)
+#define LTR_CONFIG_STATUS_ACTIVE            BIT(30)
+#define LTR_CONFIG_STATUS_IDLE              BIT(31)
 
 #define CONTROL_QUIESCE                     BIT(1)
 #define CONTROL_IS_QUIESCED                 BIT(2)
@@ -206,6 +208,7 @@ int waitl(struct ithc *ithc, __iomem u32 *reg, u32 mask, u32 val);
 int waitb(struct ithc *ithc, __iomem u8 *reg, u8 mask, u8 val);
 
 void ithc_set_ltr_config(struct ithc *ithc, u64 active_ltr_ns, u64 idle_ltr_ns);
+void ithc_set_ltr_idle(struct ithc *ithc);
 int ithc_set_spi_config(struct ithc *ithc, u8 clkdiv, bool clkdiv8, u8 read_mode, u8 write_mode);
 int ithc_spi_command(struct ithc *ithc, u8 command, u32 offset, u32 size, void *data);
 
