@@ -33,6 +33,7 @@ struct ithc;
 #include "ithc-dma.h"
 #include "ithc-legacy.h"
 #include "ithc-quickspi.h"
+#include "ithc-debug.h"
 
 struct ithc {
 	char phys[32];
@@ -57,6 +58,4 @@ struct ithc {
 };
 
 int ithc_reset(struct ithc *ithc);
-int ithc_debug_init(struct ithc *ithc);
-void ithc_log_regs(struct ithc *ithc);
 

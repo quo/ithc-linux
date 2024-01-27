@@ -395,7 +395,7 @@ static int ithc_start(struct pci_dev *pci)
 	// because it calls ithc_hid_parse() which reads the report descriptor via DMA.
 	CHECK_RET(hid_add_device, ithc->hid.dev);
 
-	CHECK(ithc_debug_init, ithc);
+	CHECK(ithc_debug_init_device, ithc);
 
 	pci_dbg(pci, "started\n");
 	return 0;
@@ -466,17 +466,20 @@ static struct pci_driver ithc_driver = {
 		.thaw = ithc_thaw,
 		.restore = ithc_restore,
 	},
+	.driver.probe_type = PROBE_PREFER_ASYNCHRONOUS,
 	//.dev_groups = ithc_attribute_groups, // could use this (since 5.14), however the attributes won't have valid values until config has been read anyway
 };
 
 static int __init ithc_init(void)
 {
+	ithc_debug_init_module();
 	return pci_register_driver(&ithc_driver);
 }
 
 static void __exit ithc_exit(void)
 {
 	pci_unregister_driver(&ithc_driver);
+	ithc_debug_exit_module();
 }
 
 module_init(ithc_init);

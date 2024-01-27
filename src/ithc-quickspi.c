@@ -459,6 +459,8 @@ int ithc_quickspi_init(struct ithc *ithc, const struct ithc_acpi_config *cfg)
 	CHECK_RET(ithc_quickspi_init_hidspi, ithc, cfg);
 	ithc_log_regs(ithc);
 
+	// This value is set to 2 in ithc_quickspi_init_regs(). It needs to be set to 1 here,
+	// otherwise DMA will not work. Maybe selects between DMA and PIO mode?
 	bitsl(&ithc->regs->quickspi_config1,
 		QUICKSPI_CONFIG1_UNKNOWN_16(0xffff), QUICKSPI_CONFIG1_UNKNOWN_16(1));
 

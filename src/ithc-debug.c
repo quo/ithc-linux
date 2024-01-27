@@ -99,6 +99,23 @@ static ssize_t ithc_debugfs_cmd_write(struct file *f, const char __user *buf, si
 	return len;
 }
 
+static struct dentry *dbg_dir;
+
+void __init ithc_debug_init_module(void)
+{
+	struct dentry *d = debugfs_create_dir(DEVNAME, NULL);
+	if (IS_ERR(d))
+		pr_warn("failed to create debugfs dir (%li)\n", PTR_ERR(d));
+	else
+		dbg_dir = d;
+}
+
+void __exit ithc_debug_exit_module(void)
+{
+	debugfs_remove_recursive(dbg_dir);
+	dbg_dir = NULL;
+}
+
 static const struct file_operations ithc_debugfops_cmd = {
 	.owner = THIS_MODULE,
 	.write = ithc_debugfs_cmd_write,
@@ -107,17 +124,18 @@ static const struct file_operations ithc_debugfops_cmd = {
 static void ithc_debugfs_devres_release(struct device *dev, void *res)
 {
 	struct dentry **dbgm = res;
-	if (*dbgm)
-		debugfs_remove_recursive(*dbgm);
+	debugfs_remove_recursive(*dbgm);
 }
 
-int ithc_debug_init(struct ithc *ithc)
+int ithc_debug_init_device(struct ithc *ithc)
 {
+	if (!dbg_dir)
+		return -ENOENT;
 	struct dentry **dbgm = devres_alloc(ithc_debugfs_devres_release, sizeof(*dbgm), GFP_KERNEL);
 	if (!dbgm)
 		return -ENOMEM;
 	devres_add(&ithc->pci->dev, dbgm);
-	struct dentry *dbg = debugfs_create_dir(DEVNAME, NULL);
+	struct dentry *dbg = debugfs_create_dir(pci_name(ithc->pci), dbg_dir);
 	if (IS_ERR(dbg))
 		return PTR_ERR(dbg);
 	*dbgm = dbg;

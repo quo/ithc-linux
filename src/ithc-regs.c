@@ -105,7 +105,7 @@ int ithc_set_spi_config(struct ithc *ithc, u8 clkdiv, bool clkdiv8, u8 read_mode
 
 int ithc_spi_command(struct ithc *ithc, u8 command, u32 offset, u32 size, void *data)
 {
-	pci_dbg(ithc->pci, "SPI command %u, size %u, offset %u\n", command, size, offset);
+	pci_dbg(ithc->pci, "SPI command %u, size %u, offset 0x%x\n", command, size, offset);
 	if (size > sizeof(ithc->regs->spi_cmd.data))
 		return -EINVAL;
 
