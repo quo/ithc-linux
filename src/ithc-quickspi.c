@@ -257,7 +257,8 @@ void ithc_print_acpi_config(struct ithc *ithc, const struct ithc_acpi_config *cf
 		spi_frequency, limit_packet_size, tx_delay, active_ltr, idle_ltr);
 }
 
-static void set_opcode(struct ithc *ithc, size_t i, u8 opcode) {
+static void set_opcode(struct ithc *ithc, size_t i, u8 opcode)
+{
 	writeb(opcode, &ithc->regs->opcode[i].header);
 	writeb(opcode, &ithc->regs->opcode[i].single);
 	writeb(opcode, &ithc->regs->opcode[i].dual);
@@ -286,8 +287,10 @@ static int ithc_quickspi_init_regs(struct ithc *ithc, const struct ithc_acpi_con
 	// SPI addresses and opcodes
 	if (cfg->has_input_report_header_address)
 		writel(cfg->input_report_header_address, &ithc->regs->spi_header_addr);
-	if (cfg->has_input_report_body_address)
+	if (cfg->has_input_report_body_address) {
 		writel(cfg->input_report_body_address, &ithc->regs->dma_rx[0].spi_addr);
+		writel(cfg->input_report_body_address, &ithc->regs->dma_rx[1].spi_addr);
+	}
 	if (cfg->has_output_report_body_address)
 		writel(cfg->output_report_body_address, &ithc->regs->dma_tx.spi_addr);
 
