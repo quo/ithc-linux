@@ -332,7 +332,7 @@ static int ithc_start(struct pci_dev *pci)
 
 	// Initialize HID and DMA.
 	CHECK_RET(ithc_hid_init, ithc);
-	CHECK(devm_device_add_groups, &pci->dev, ithc_attribute_groups);
+	CHECK(device_add_groups, &pci->dev, ithc_attribute_groups);
 	if (ithc_use_rx0)
 		CHECK_RET(ithc_dma_rx_init, ithc, 0);
 	if (ithc_use_rx1)
