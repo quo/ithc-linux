@@ -45,46 +45,6 @@ static bool ithc_log_regs_enabled = false;
 module_param_named(logregs, ithc_log_regs_enabled, bool, 0);
 MODULE_PARM_DESC(logregs, "Log changes in register values (for debugging)");
 
-// Sysfs attributes
-
-static ssize_t vendor_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct ithc *ithc = dev_get_drvdata(dev);
-	if (!ithc || !ithc->have_config)
-		return -ENODEV;
-	return sprintf(buf, "0x%04x", ithc->vendor_id);
-}
-static DEVICE_ATTR_RO(vendor);
-static ssize_t product_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct ithc *ithc = dev_get_drvdata(dev);
-	if (!ithc || !ithc->have_config)
-		return -ENODEV;
-	return sprintf(buf, "0x%04x", ithc->product_id);
-}
-static DEVICE_ATTR_RO(product);
-static ssize_t revision_show(struct device *dev, struct device_attribute *attr, char *buf)
-{
-	struct ithc *ithc = dev_get_drvdata(dev);
-	if (!ithc || !ithc->have_config)
-		return -ENODEV;
-	return sprintf(buf, "%u", ithc->product_rev);
-}
-static DEVICE_ATTR_RO(revision);
-
-static const struct attribute_group *ithc_attribute_groups[] = {
-	&(const struct attribute_group){
-		.name = DEVNAME,
-		.attrs = (struct attribute *[]){
-			&dev_attr_vendor.attr,
-			&dev_attr_product.attr,
-			&dev_attr_revision.attr,
-			NULL
-		},
-	},
-	NULL
-};
-
 // Interrupts/polling
 
 static void ithc_disable_interrupts(struct ithc *ithc)
@@ -332,7 +292,6 @@ static int ithc_start(struct pci_dev *pci)
 
 	// Initialize HID and DMA.
 	CHECK_RET(ithc_hid_init, ithc);
-	CHECK(devm_device_add_groups, &pci->dev, ithc_attribute_groups);
 	if (ithc_use_rx0)
 		CHECK_RET(ithc_dma_rx_init, ithc, 0);
 	if (ithc_use_rx1)
@@ -441,7 +400,6 @@ static struct pci_driver ithc_driver = {
 		.restore = ithc_restore,
 	},
 	.driver.probe_type = PROBE_PREFER_ASYNCHRONOUS,
-	//.dev_groups = ithc_attribute_groups, // could use this (since 5.14), however the attributes won't have valid values until config has been read anyway
 };
 
 static int __init ithc_init(void)
