@@ -14,6 +14,7 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/poll.h>
+#include <linux/vmalloc.h>
 
 #define DEVNAME "ithc"
 #define DEVFULLNAME "Intel Touch Host Controller"
