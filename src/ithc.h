@@ -14,6 +14,7 @@
 #include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/poll.h>
+#include <linux/timer.h>
 #include <linux/vmalloc.h>
 
 #define DEVNAME "ithc"
@@ -66,6 +67,7 @@ struct ithc {
 	struct pci_dev *pci;
 	int irq;
 	struct task_struct *poll_thread;
+	struct timer_list idle_timer;
 
 	struct ithc_registers __iomem *regs;
 	struct ithc_registers *prev_regs; // for debugging

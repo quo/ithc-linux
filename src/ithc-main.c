@@ -41,6 +41,10 @@ static int ithc_idle_ltr_us = -1;
 module_param_named(idleltr, ithc_idle_ltr_us, int, 0);
 MODULE_PARM_DESC(idleltr, "Idle LTR value override (in microseconds)");
 
+static unsigned int ithc_idle_delay_ms = 1000;
+module_param_named(idledelay, ithc_idle_delay_ms, uint, 0);
+MODULE_PARM_DESC(idleltr, "Minimum idle time before applying idle LTR value (in milliseconds)");
+
 static bool ithc_log_regs_enabled = false;
 module_param_named(logregs, ithc_log_regs_enabled, bool, 0);
 MODULE_PARM_DESC(logregs, "Log changes in register values (for debugging)");
@@ -73,14 +77,19 @@ static void ithc_clear_interrupts(struct ithc *ithc)
 		&ithc->regs->dma_tx.status);
 }
 
+static void ithc_idle_timer_callback(struct timer_list *t)
+{
+	struct ithc *ithc = container_of(t, struct ithc, idle_timer);
+	ithc_set_ltr_idle(ithc);
+}
+
 static void ithc_process(struct ithc *ithc)
 {
 	ithc_log_regs(ithc);
 
 	// The THC automatically transitions from LTR idle to active at the start of a DMA transfer.
-	// It does not appear to automatically go back to idle, so we switch it back here, since
-	// the DMA transfer should be complete.
-	ithc_set_ltr_idle(ithc);
+	// It does not appear to automatically go back to idle, so we switch it back after a delay.
+	mod_timer(&ithc->idle_timer, jiffies + msecs_to_jiffies(ithc_idle_delay_ms));
 
 	bool rx0 = ithc_use_rx0 && (readl(&ithc->regs->dma_rx[0].status) & (DMA_RX_STATUS_ERROR | DMA_RX_STATUS_HAVE_DATA)) != 0;
 	bool rx1 = ithc_use_rx1 && (readl(&ithc->regs->dma_rx[1].status) & (DMA_RX_STATUS_ERROR | DMA_RX_STATUS_HAVE_DATA)) != 0;
@@ -228,6 +237,7 @@ static void ithc_stop(void *res)
 	else
 		ithc_legacy_exit(ithc);
 	ithc_disable(ithc);
+	del_timer_sync(&ithc->idle_timer);
 
 	// Clear DMA config.
 	for (unsigned int i = 0; i < 2; i++) {
@@ -297,6 +307,8 @@ static int ithc_start(struct pci_dev *pci)
 	if (ithc_use_rx1)
 		CHECK_RET(ithc_dma_rx_init, ithc, 1);
 	CHECK_RET(ithc_dma_tx_init, ithc);
+
+	timer_setup(&ithc->idle_timer, ithc_idle_timer_callback, 0);
 
 	// Add ithc_stop() callback AFTER setting up DMA buffers, so that polling/irqs/DMA are
 	// disabled BEFORE the buffers are freed.
