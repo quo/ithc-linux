@@ -189,10 +189,10 @@ static int ithc_init_device(struct ithc *ithc)
 	// Set Latency Tolerance Reporting config. The device will automatically
 	// apply these values depending on whether it is active or idle.
 	// If active value is too high, DMA buffer data can become truncated.
-	// By default, we set the active LTR value to 100us, and idle to 100ms.
+	// By default, we set the active LTR value to 50us, and idle to 100ms.
 	u64 active_ltr_ns = ithc_active_ltr_us >= 0 ? (u64)ithc_active_ltr_us * 1000
 		: cfg.has_config && cfg.has_active_ltr ? (u64)cfg.active_ltr << 10
-		: 100 * 1000;
+		: 50 * 1000;
 	u64 idle_ltr_ns = ithc_idle_ltr_us >= 0 ? (u64)ithc_idle_ltr_us * 1000
 		: cfg.has_config && cfg.has_idle_ltr ? (u64)cfg.idle_ltr << 10
 		: 100 * 1000 * 1000;
