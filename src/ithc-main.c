@@ -50,7 +50,7 @@ MODULE_PARM_DESC(idleltr, "Idle LTR value override (in microseconds)");
 
 static unsigned int ithc_idle_delay_ms = 1000;
 module_param_named(idledelay, ithc_idle_delay_ms, uint, 0);
-MODULE_PARM_DESC(idleltr, "Minimum idle time before applying idle LTR value (in milliseconds)");
+MODULE_PARM_DESC(idledelay, "Minimum idle time before applying idle LTR value (in milliseconds)");
 
 static bool ithc_log_regs_enabled = false;
 module_param_named(logregs, ithc_log_regs_enabled, bool, 0);
@@ -213,7 +213,7 @@ static int ithc_init_device(struct ithc *ithc)
 	return 0;
 }
 
-int ithc_reset(struct ithc *ithc)
+static int ithc_reset(struct ithc *ithc)
 {
 	// FIXME This should probably do devres_release_group()+ithc_start().
 	// But because this is called during DMA processing, that would have to be done
@@ -229,6 +229,12 @@ int ithc_reset(struct ithc *ithc)
 	return 0;
 }
 
+static void ithc_reset_work_func(struct work_struct *work)
+{
+	struct ithc *ithc = container_of(work, struct ithc, reset_work);
+	CHECK(ithc_reset, ithc);
+}
+
 static void ithc_stop(void *res)
 {
 	struct ithc *ithc = res;
@@ -239,6 +245,8 @@ static void ithc_stop(void *res)
 		CHECK(kthread_stop, ithc->poll_thread);
 	if (ithc->irq >= 0)
 		disable_irq(ithc->irq);
+	// Poll/irq processing is stopped, so no new resets can be scheduled beyond this point.
+	cancel_work_sync(&ithc->reset_work);
 	if (ithc->use_quickspi)
 		ithc_quickspi_exit(ithc);
 	else
@@ -282,6 +290,7 @@ static int ithc_start(struct pci_dev *pci)
 		return -ENOMEM;
 	ithc->irq = -1;
 	ithc->pci = pci;
+	spin_lock_init(&ithc->ltr_lock);
 	snprintf(ithc->phys, sizeof(ithc->phys), "pci-%s/" DEVNAME, pci_name(pci));
 	pci_set_drvdata(pci, ithc);
 	CHECK_RET(devm_add_action_or_reset, &pci->dev, ithc_clear_drvdata, pci);
@@ -316,6 +325,7 @@ static int ithc_start(struct pci_dev *pci)
 	CHECK_RET(ithc_dma_tx_init, ithc);
 
 	timer_setup(&ithc->idle_timer, ithc_idle_timer_callback, 0);
+	INIT_WORK(&ithc->reset_work, ithc_reset_work_func);
 
 	// Add ithc_stop() callback AFTER setting up DMA buffers, so that polling/irqs/DMA are
 	// disabled BEFORE the buffers are freed.

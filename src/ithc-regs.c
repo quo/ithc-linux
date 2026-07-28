@@ -78,14 +78,21 @@ void ithc_set_ltr_config(struct ithc *ithc, u64 active_ltr_ns, u64 idle_ltr_ns)
 	calc_ltr(&idle_ltr_ns, &idle_val, &idle_scale);
 	pci_dbg(ithc->pci, "setting active LTR value to %llu ns, idle LTR value to %llu ns\n",
 		active_ltr_ns, idle_ltr_ns);
+	unsigned long flags;
+	spin_lock_irqsave(&ithc->ltr_lock, flags);
 	writel(LTR_CONFIG_ENABLE_ACTIVE | LTR_CONFIG_ENABLE_IDLE | LTR_CONFIG_APPLY |
 		LTR_CONFIG_ACTIVE_LTR_SCALE(active_scale) | LTR_CONFIG_ACTIVE_LTR_VALUE(active_val) |
 		LTR_CONFIG_IDLE_LTR_SCALE(idle_scale) | LTR_CONFIG_IDLE_LTR_VALUE(idle_val),
 		&ithc->regs->ltr_config);
+	spin_unlock_irqrestore(&ithc->ltr_lock, flags);
 }
 
 void ithc_set_ltr_idle(struct ithc *ithc)
 {
+	// The idle timer can fire while the LTR config is being rewritten (e.g. by the reset
+	// work), so the read-modify-write must be protected by ltr_lock.
+	unsigned long flags;
+	spin_lock_irqsave(&ithc->ltr_lock, flags);
 	u32 ltr = readl(&ithc->regs->ltr_config);
 	switch (ltr & (LTR_CONFIG_STATUS_ACTIVE | LTR_CONFIG_STATUS_IDLE)) {
 	case LTR_CONFIG_STATUS_IDLE:
@@ -97,6 +104,7 @@ void ithc_set_ltr_idle(struct ithc *ithc)
 		pci_err(ithc->pci, "invalid LTR state 0x%08x\n", ltr);
 		break;
 	}
+	spin_unlock_irqrestore(&ithc->ltr_lock, flags);
 }
 
 int ithc_set_spi_config(struct ithc *ithc, u8 clkdiv, bool clkdiv8, u8 read_mode, u8 write_mode)

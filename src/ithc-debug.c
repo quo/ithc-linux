@@ -39,17 +39,19 @@ static ssize_t ithc_debugfs_cmd_write(struct file *f, const char __user *buf, si
 
 	// Parse the list of arguments into a u32 array.
 	u32 n = 0;
-	const char *s = cmd + 1;
+	char *s = cmd + 1;
 	u32 a[32];
-	while (*s && *s != '\n') {
+	while (*s) {
 		if (n >= ARRAY_SIZE(a))
 			return -EINVAL;
 		if (*s++ != ' ')
 			return -EINVAL;
-		char *e;
-		a[n++] = simple_strtoul(s, &e, 0);
-		if (e == s)
+		char *e = strchrnul(s, ' ');
+		char c = *e;
+		*e = 0;
+		if (kstrtou32(s, 0, &a[n++]))
 			return -EINVAL;
+		*e = c;
 		s = e;
 	}
 	ithc_log_regs(ithc);
@@ -57,7 +59,7 @@ static ssize_t ithc_debugfs_cmd_write(struct file *f, const char __user *buf, si
 	// Execute the command.
 	switch (cmd[0]) {
 	case 'x': // reset
-		ithc_reset(ithc);
+		schedule_work(&ithc->reset_work);
 		break;
 	case 'w': // write register: offset mask value
 		if (n != 3 || (a[0] & 3))

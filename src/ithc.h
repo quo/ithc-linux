@@ -16,6 +16,7 @@
 #include <linux/poll.h>
 #include <linux/timer.h>
 #include <linux/vmalloc.h>
+#include <linux/workqueue.h>
 
 #define DEVNAME "ithc"
 #define DEVFULLNAME "Intel Touch Host Controller"
@@ -68,6 +69,8 @@ struct ithc {
 	int irq;
 	struct task_struct *poll_thread;
 	struct timer_list idle_timer;
+	struct work_struct reset_work;
+	spinlock_t ltr_lock;
 
 	struct ithc_registers __iomem *regs;
 	struct ithc_registers *prev_regs; // for debugging
@@ -84,6 +87,4 @@ struct ithc {
 	u32 max_tx_size;
 	u32 legacy_touch_cfg;
 };
-
-int ithc_reset(struct ithc *ithc);
 

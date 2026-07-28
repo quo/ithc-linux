@@ -106,7 +106,8 @@ void ithc_hid_process_data(struct ithc *ithc, struct ithc_data *d)
 		return;
 
 	case ITHC_DATA_ERROR:
-		CHECK(ithc_reset, ithc);
+		// This is called during DMA processing, so the reset must be done asynchronously.
+		schedule_work(&ithc->reset_work);
 		return;
 
 	case ITHC_DATA_REPORT_DESCRIPTOR:
@@ -120,6 +121,8 @@ void ithc_hid_process_data(struct ithc *ithc, struct ithc_data *d)
 	{
 		// Standard HID input report.
 		int r = hid_input_report(ithc->hid.dev, HID_INPUT_REPORT, NOCONST(d->data), d->size, 1);
+		if (r == -ENODEV || r == -EBUSY)
+			return;
 		if (r < 0) {
 			pci_warn(ithc->pci, "hid_input_report failed with %i (size %u, report ID 0x%02x)\n",
 				r, d->size, d->size ? *(u8 *)d->data : 0);

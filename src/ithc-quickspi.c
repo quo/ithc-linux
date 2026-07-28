@@ -507,10 +507,10 @@ int ithc_quickspi_init(struct ithc *ithc, const struct ithc_acpi_config *cfg)
 
 void ithc_quickspi_exit(struct ithc *ithc)
 {
-	// TODO Should we send HIDSPI 'power off' command?
-	//struct hidspi_header h = { .type = HIDSPI_OUTPUT_TYPE_COMMAND, .id = 3, };
-	//struct ithc_data d = { .type = ITHC_DATA_RAW, .data = &h, .size = sizeof(h) };
-	//CHECK(ithc_dma_tx, ithc, &d); // or ithc_spi_command()
+	// Send the HIDSPI 'power off' command (before ithc_stop() disables DMA/NRESET).
+	struct hidspi_header h = { .type = HIDSPI_OUTPUT_TYPE_COMMAND, .id = 3, };
+	struct ithc_data d = { .type = ITHC_DATA_RAW, .data = &h, .size = sizeof(h) };
+	CHECK(ithc_dma_tx, ithc, &d);
 }
 
 int ithc_quickspi_decode_rx(struct ithc *ithc, const void *src, size_t len, struct ithc_data *dest)
